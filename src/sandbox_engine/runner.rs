@@ -1,7 +1,7 @@
 use crate::errors::{LionError, Result};
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tracing::{debug, error, info, warn};
 
 use crate::sandbox_engine::builder::build_bwrap;
@@ -16,6 +16,7 @@ pub fn run_sandboxed(
     dry_run: bool,
     gui: bool,
     _optional: Vec<String>,
+    ro_paths: Vec<String>,
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -43,19 +44,50 @@ pub fn run_sandboxed(
     if has_src && !dry_run {
         info!("Protecting src/ as read-only");
     }
+
+    // 3. Load lion.toml config (silently ignored if absent)
+    let lion_cfg = crate::config::load(&project_dir);
+    let project_ro = lion_cfg.project_is_readonly();
     if !dry_run {
-        info!("Project dir: {}", project_dir.display());
+        let access = if project_ro { "read-only" } else { "read-write" };
+        info!("Project dir ({}): {}", access, project_dir.display());
     }
 
-    // 3. Build bwrap command
-    let mut bwrap = build_bwrap(project_path, network_mode, dry_run);
+    // Build bwrap command
+    let mut bwrap = build_bwrap(project_path, network_mode, dry_run, project_ro);
 
     // 4. Mounts
     apply_system_mounts(&mut bwrap, gui);
 
-    if has_src {
+    if has_src && !project_ro {
+        // Only separately pin src/ as ro when project itself is rw
         let src_path = src_dir.to_str().unwrap();
         bwrap.arg("--ro-bind").arg(src_path).arg(src_path);
+    }
+
+    // 4b. Mounts from lion.toml [[mount]] entries
+    for entry in &lion_cfg.mount {
+        let resolved = entry.resolved_path();
+        let p = std::path::Path::new(&resolved);
+        if p.exists() {
+            let flag = if entry.is_readonly() { "--ro-bind" } else { "--bind" };
+            let tag  = if entry.is_readonly() { "ro" } else { "rw" };
+            info!("Mounting ({}) from lion.toml: {}", tag, resolved);
+            bwrap.arg(flag).arg(&resolved).arg(&resolved);
+        } else {
+            warn!("lion.toml mount path does not exist, skipping: {}", resolved);
+        }
+    }
+
+    // 4c. CLI --ro flags (appended on top of config)
+    for path in &ro_paths {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            info!("Mounting read-only (--ro): {}", path);
+            bwrap.arg("--ro-bind").arg(path).arg(path);
+        } else {
+            warn!("--ro path does not exist, skipping: {}", path);
+        }
     }
 
     // 5. Env
@@ -75,7 +107,10 @@ pub fn run_sandboxed(
     }
 
     // 6. Execute
-    let status = bwrap.status().map_err(|e| LionError::Internal(e.to_string()))?;
+    bwrap.stderr(Stdio::piped());
+    let mut child = bwrap.spawn().map_err(|e| LionError::Internal(e.to_string()))?;
+    let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, ro_paths.clone()));
+    let status = child.wait().map_err(|e| LionError::Internal(e.to_string()))?;
 
     if status.success() {
         debug!("Command completed successfully");

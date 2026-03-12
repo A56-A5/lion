@@ -2,6 +2,8 @@ pub mod install;
 pub mod sandbox_engine;
 pub mod errors;
 pub mod logger;
+pub mod monitor;
+pub mod config;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
@@ -61,6 +63,10 @@ pub enum Commands {
         /// Enable detailed technical logging in the terminal.
         #[arg(long, default_value_t = false)]
         debug: bool,
+
+        /// Mount a directory as read-only inside the sandbox (repeatable, e.g. --ro /home/user/docs).
+        #[arg(long, value_name = "PATH")]
+        ro: Vec<String>,
     },
 }
 
@@ -77,6 +83,7 @@ fn main() {
             gui,
             optional,
             debug,
+            ro,
         } => {
             // Initialize logging before starting the engine.
             if let Err(e) = logger::init_logging(*debug) {
@@ -89,6 +96,7 @@ fn main() {
                 *dry_run,
                 *gui,
                 optional.clone(),
+                ro.clone(),
             )
             .map_err(Into::into)
         }

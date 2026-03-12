@@ -13,6 +13,7 @@ pub fn build_bwrap(
     project_path: &str,
     network_mode: crate::sandbox_engine::network::NetworkMode,
     dry_run: bool,
+    project_ro: bool,
 ) -> Command {
     let mut bwrap = Command::new("bwrap");
 
@@ -29,10 +30,10 @@ pub fn build_bwrap(
         "/proc", // Fresh procfs
         "--dev",
         "/dev", // Fresh dev system
-        "--bind",
-        project_path,
-        project_path, // The project directory itself is always mapped RW
     ]);
+
+    let mount_flag = if project_ro { "--ro-bind" } else { "--bind" };
+    bwrap.arg(mount_flag).arg(project_path).arg(project_path);
 
     use crate::sandbox_engine::network::NetworkMode;
     use tracing::info;

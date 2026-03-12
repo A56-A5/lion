@@ -1,0 +1,11 @@
+[sandbox]
+# "ro" = project directory is read-only inside the sandbox
+# "rw" = project directory is read-write (default)
+project_access = "ro"
+
+# Expose extra paths into the sandbox.
+# "ro" = read-only,  "rw" = read-write
+
+[[mount]]
+path = "~/.npmrc"
+access = "ro"
