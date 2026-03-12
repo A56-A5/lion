@@ -107,10 +107,18 @@ pub fn run_sandboxed(
             match ProxyHandle::spawn(&final_domains) {
                 Ok(p) => {
                     let proxy_url = format!("http://127.0.0.1:{}", p.port);
+                    // Standard env vars (curl, wget, pip, cargo, …)
                     bwrap.arg("--setenv").arg("HTTP_PROXY").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("HTTPS_PROXY").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("http_proxy").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("https_proxy").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("ALL_PROXY").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("all_proxy").arg(&proxy_url);
+                    // npm-specific proxy config (npm ignores HTTP_PROXY)
+                    bwrap.arg("--setenv").arg("npm_config_proxy").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("npm_config_https_proxy").arg(&proxy_url);
+                    // pip honours HTTP_PROXY but also reads these
+                    bwrap.arg("--setenv").arg("PIP_PROXY").arg(&proxy_url);
                     info!("Proxy ready on :{} — {} domain(s) allowed", p.port, final_domains.len());
                     Some(p)
                 }
