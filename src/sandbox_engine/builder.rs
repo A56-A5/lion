@@ -3,6 +3,8 @@
 //! Handles the initial creation of the `Command` object and sets up
 //! the core namespace isolation flags.
 
+use std::process::Command;
+
 /// Initializes the bubblewrap command with the fundamental namespace unshares.
 ///
 /// This function sets up the "jail" by unsharing all standard Linux namespaces

@@ -14,7 +14,7 @@ use crate::sandbox_engine::environment::apply_environment;
 use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
 
-//!   6. Execute and forward the child's exit code
+//   6. Execute and forward the child's exit code
 
 /// Central entry point — builds and runs the sandboxed process.
 ///
@@ -87,7 +87,7 @@ pub fn run_sandboxed(
         let program = bwrap.get_program().to_string_lossy();
         let args = bwrap
             .get_args()
-            .map(|a| a.to_string_lossy().to_string())
+            .map(|a: &std::ffi::OsStr| a.to_string_lossy().to_string())
             .collect::<Vec<_>>()
             .join(" ");
         println!(
