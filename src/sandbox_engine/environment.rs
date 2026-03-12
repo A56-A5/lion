@@ -1,6 +1,14 @@
+//! `sandbox_engine/environment.rs`
+//!
+//! Responsible for sanitizing and forwarding environment variables into the sandbox.
+//! By default, almost all host environment variables are stripped for security.
+
 use std::process::Command;
 
 /// Passes strictly safe environment variables into the sandbox.
+///
+/// This prevents "environment leakage" where host secrets or aliases
+/// might affect the sandboxed application's behavior.
 pub fn apply_environment(bwrap: &mut Command, gui: bool) {
     // If GUI is allowed, pass display servers to allow windowing.
     if gui {

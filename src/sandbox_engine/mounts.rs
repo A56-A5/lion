@@ -1,7 +1,15 @@
+//! `sandbox_engine/mounts.rs`
+//!
+//! Handles all filesystem mounting logic (bind-mounts) for the sandbox.
+//! This is the most critical part of the sandbox's security and compatibility.
+
 use std::env;
 use std::process::Command;
 
 /// Mounts static hardcoded system directories needed to run typical binaries.
+///
+/// This ensures that the sandboxed process has access to shared libraries (`/lib`),
+/// standard tools (`/bin`), and core system configuration (`/etc`).
 pub fn apply_system_mounts(bwrap: &mut Command, gui: bool) {
     let standard_paths = [
         "/usr",
@@ -19,6 +27,9 @@ pub fn apply_system_mounts(bwrap: &mut Command, gui: bool) {
     }
 
     if gui {
+        // --- GUI and Hardware Support ---
+        // These mounts are only active when the --gui flag is used.
+        
         // /usr/share/fonts: read-only is correct, fonts are static data.
         if std::path::Path::new("/usr/share/fonts").exists() {
             bwrap.args(["--ro-bind", "/usr/share/fonts", "/usr/share/fonts"]);

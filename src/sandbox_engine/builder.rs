@@ -1,6 +1,12 @@
-use std::process::Command;
+//! `sandbox_engine/builder.rs`
+//!
+//! Handles the initial creation of the `Command` object and sets up
+//! the core namespace isolation flags.
 
 /// Initializes the bubblewrap command with the fundamental namespace unshares.
+///
+/// This function sets up the "jail" by unsharing all standard Linux namespaces
+/// and providing basic temporary filesystems like `/tmp`, `/proc`, and `/dev`.
 pub fn build_bwrap(project_path: &str, network: bool, dry_run: bool) -> Command {
     let mut bwrap = Command::new("bwrap");
 

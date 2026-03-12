@@ -1,3 +1,8 @@
+//! `sandbox_engine/userns.rs`
+//!
+//! Logic for verifying and troubleshooting User Namespaces.
+//! User namespaces are required for rootless sandboxing.
+
 use anyhow::{bail, Result};
 use std::process::Command;
 
@@ -5,6 +10,9 @@ use std::process::Command;
 ///
 /// Returns `Ok(())` if it works, or an `Err` with an actionable message if
 /// AppArmor (or another policy) is blocking `--unshare-user`.
+///
+/// This is used as a "pre-flight check" to provide a better user experience
+/// when the kernel prevents the sandbox from starting.
 pub fn check_userns_available() -> Result<()> {
     // bwrap requires at least a root bind + /dev + /proc to execute successfully.
     // Without --ro-bind / / the command always fails regardless of userns policy.

@@ -1,3 +1,9 @@
+//! `sandbox_engine/runner.rs`
+//!
+//! The main orchestrator of the sandbox execution flow.
+//! Connects all specialized modules (builder, environment, mounts, etc.)
+//! and handles the final process execution.
+
 use anyhow::{bail, Result};
 use std::env;
 use std::path::PathBuf;
@@ -8,15 +14,12 @@ use crate::sandbox_engine::environment::apply_environment;
 use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
 
+//!   6. Execute and forward the child's exit code
+
 /// Central entry point — builds and runs the sandboxed process.
 ///
-/// Steps in order:
-///   1. Verify bwrap is installed
-///   2. Pre-flight: confirm user namespaces are available
-///   3. Build the bwrap command object with namespace flags
-///   4. Apply system mounts + user mounts + src/ protection
-///   5. Forward environment variables
-///   6. Execute and forward the child's exit code
+/// This function coordinates the building of the `bubblewrap` command,
+/// setup of namespaces, mounting of filesystems, and eventually execution.
 pub fn run_sandboxed(
     cmd: Vec<String>,
     network: bool,

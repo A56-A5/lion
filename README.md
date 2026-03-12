@@ -12,6 +12,8 @@ L.I.O.N currently operates as a static, pre-hardcoded sandbox engine. It protect
 - **Environment Isolation**: Passes only safe environment variables (`HOME`, `USER`, `PATH`, `LANG`, and basic `XDG_*` vars).
 - **Selective Capabilities**: You can opt-in to expose network interfaces (`--network`) or GUI rendering sockets (`--gui`).
 
+For a detailed breakdown of EXACTLY what this sandbox exposes to applications, see [EXPOSURES.md](file:///home/vishnunandan555/Projects/lion/EXPOSURES.md).
+
 ## System Setup
 
 L.I.O.N requires `bwrap` to be installed on your system.
@@ -40,7 +42,7 @@ lion run --gui -- firefox
 # Debug Run: See what bwrap command will be executed without actually running it
 lion run --dry-run -- ls -la
 
-# The --optional flag exists but does nothing in the current monolithic build
+# The --optional flag exists but does nothing in the current build
 lion run --optional audio -- ls
 ```
 
@@ -49,8 +51,8 @@ lion run --optional audio -- ls
 Because the tool relies on monolithic hardcoded paths, it trades compatibility for simplicity:
 
 - **Bubblewrap Dependency**: Requires `bwrap` to be installed on the host system.
-- **Limited Compatibility**: Hardcoding `/usr` and `/lib` works for Ubuntu/Debian, but will drastically fail on heavily customized distros (e.g., NixOS, Arch subsets) or when symlinks are deeply nested.
-- **Incomplete GUI Support**: GUI sandboxing currently lacks D-Bus sockets, XAuthority mappings, and `/dev/dri` hardware acceleration mounts. Consequently, complex GTK/Qt apps (like `gnome-text-editor`) will fail to start.
+- **Limited Compatibility**: Hardcoding `/usr` and `/lib` works for Ubuntu/Debian, but will fail on heavily customized distros (e.g., NixOS, Arch subsets) or when symlinks are deeply nested.
+- **GUI Support**: GUI sandboxing requires GPU hardware access (`/dev/dri`) and session sockets. While most native apps work, some complex D-Bus services or global shortcuts may be restricted.
 - **Linux Only**: Fundamentally tied to Linux namespaces.
 - **Snap Packages are Incompatible**: Ubuntu's default `firefox` and other apps installed via `snap` **will not work**. Snap packages rely on `snap-confine`, which requires root-level capabilities (like `CAP_MAC_ADMIN`). Because L.I.O.N creates rootless, unprivileged user namespaces (`bwrap --unshare-user`), the Linux kernel explicitly strips these capabilities, making it technically impossible to run Snaps inside this sandbox.
 
@@ -69,8 +71,16 @@ To run Firefox securely inside the sandbox, you must use the native binary versi
 - **Rootless Limitations**: Only works in rootless setups; deeply nested system administration tasks cannot be sandboxed correctly.
 - **No Resource Limits**: Currently does not restrict CPU or RAM usage limit.
 
-## Technical Debt & Evolution
+## Architecture
 
-L.I.O.N currently operates entirely from a monolithic `sandbox.rs` file. There are unused `mod.rs`, `env.rs`, and `mounts.rs` files left over from an incomplete refactoring attempt. 
+L.I.O.N is built with a modular engine located in `src/sandbox_engine/`:
 
-**Why we need a scanner back:** To make L.I.O.N portable across diverse Linux ecosystems, we plan to construct a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus/DRI sockets, mapping them perfectly into the sandbox before execution. This is necessary to support more complex IDEs, language servers, and varying OS structures without breaking the sandbox.
+- `builder.rs`: Configures bubblewrap namespaces.
+- `environment.rs`: Sanitizes environment variables.
+- `mounts.rs`: Handles all bind-mount logic.
+- `runner.rs`: Orchestrates the execution flow.
+- `userns.rs`: Pre-flight checks for User Namespaces.
+
+## Evolution: The Scanner Module
+
+To make L.I.O.N portable across diverse Linux ecosystems, we plan to construct a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus/DRI sockets, mapping them perfectly into the sandbox before execution.
