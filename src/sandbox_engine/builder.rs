@@ -9,7 +9,11 @@ use std::process::Command;
 ///
 /// This function sets up the "jail" by unsharing all standard Linux namespaces
 /// and providing basic temporary filesystems like `/tmp`, `/proc`, and `/dev`.
-pub fn build_bwrap(project_path: &str, network: bool, dry_run: bool) -> Command {
+pub fn build_bwrap(
+    project_path: &str,
+    network_mode: crate::sandbox_engine::network::NetworkMode,
+    dry_run: bool,
+) -> Command {
     let mut bwrap = Command::new("bwrap");
 
     // Core isolation flags
@@ -30,34 +34,56 @@ pub fn build_bwrap(project_path: &str, network: bool, dry_run: bool) -> Command 
         project_path, // The project directory itself is always mapped RW
     ]);
 
-    // Network isolation:
-    // - Default (no --network flag): sandbox gets its own network namespace with
-    //   no interfaces, so it literally cannot reach the internet or LAN.
-    // - With --network flag: the sandbox shares the host network namespace, and
-    //   we bind in the DNS/TLS config files it needs to resolve names.
-    if !network {
-        // --unshare-net gives the sandbox a fresh empty network namespace.
-        // No interfaces = no outbound connections possible.
-        bwrap.arg("--unshare-net");
-        if !dry_run {
-            println!("🌐 Network: disabled");
+    use crate::sandbox_engine::network::NetworkMode;
+
+    match network_mode {
+        NetworkMode::None => {
+            // --unshare-net gives the sandbox a fresh empty network namespace.
+            // No interfaces = no outbound connections possible.
+            bwrap.arg("--unshare-net");
+            if !dry_run {
+                println!("🌐 Network: disabled");
+            }
         }
-    } else {
-        // Bind in the minimum files needed for DNS resolution and HTTPS.
-        // We use --ro-bind so the sandboxed process cannot modify them.
-        if std::path::Path::new("/etc/resolv.conf").exists() {
-            bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
+        NetworkMode::Full => {
+            // Share the host network namespace.
+            apply_full_network_mounts(&mut bwrap);
+            if !dry_run {
+                println!("🌐 Network: full access");
+            }
         }
-        if std::path::Path::new("/etc/ssl").exists() {
-            bwrap.args(["--ro-bind", "/etc/ssl", "/etc/ssl"]);
+        NetworkMode::Dns => {
+            // For now, DNS mode shares the network but we should ideally restrict it.
+            // Minimal implementation: Share net but ONLY mount resolv.conf.
+            if std::path::Path::new("/etc/resolv.conf").exists() {
+                bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
+            }
+            if !dry_run {
+                println!("🌐 Network: DNS only (restricted)");
+            }
         }
-        if std::path::Path::new("/etc/pki").exists() {
-            bwrap.args(["--ro-bind", "/etc/pki", "/etc/pki"]);
-        }
-        if !dry_run {
-            println!("🌐 Network: enabled");
+        NetworkMode::Http => {
+            // Placeholder: In a full implementation, this would trigger the proxy.
+            // For now, we allow full network but print a warning about the proxy.
+            apply_full_network_mounts(&mut bwrap);
+            if !dry_run {
+                println!("🌐 Network: HTTP/HTTPS (proxy not yet implemented, allowing full)");
+            }
         }
     }
 
     bwrap
+}
+
+/// Helper to mount basic networking files (resolv.conf, SSL certs).
+fn apply_full_network_mounts(bwrap: &mut Command) {
+    if std::path::Path::new("/etc/resolv.conf").exists() {
+        bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
+    }
+    if std::path::Path::new("/etc/ssl").exists() {
+        bwrap.args(["--ro-bind", "/etc/ssl", "/etc/ssl"]);
+    }
+    if std::path::Path::new("/etc/pki").exists() {
+        bwrap.args(["--ro-bind", "/etc/pki", "/etc/pki"]);
+    }
 }

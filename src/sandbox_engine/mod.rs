@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod environment;
 pub mod mounts;
+pub mod network;
 pub mod runner;
 pub mod userns;
 

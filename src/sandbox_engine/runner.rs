@@ -22,7 +22,7 @@ use crate::sandbox_engine::userns::check_userns_available;
 /// setup of namespaces, mounting of filesystems, and eventually execution.
 pub fn run_sandboxed(
     cmd: Vec<String>,
-    network: bool,
+    network_mode: crate::sandbox_engine::network::NetworkMode,
     dry_run: bool,
     gui: bool,
     _optional: Vec<String>, // optional modules not yet wired in this build
@@ -63,7 +63,7 @@ pub fn run_sandboxed(
     }
 
     // 3. Build the bwrap command with all namespace isolation flags.
-    let mut bwrap = build_bwrap(project_path, network, dry_run);
+    let mut bwrap = build_bwrap(project_path, network_mode, dry_run);
 
     // 4. Mounts: system directories, user-defined paths, src/ protection.
     apply_system_mounts(&mut bwrap, gui);
