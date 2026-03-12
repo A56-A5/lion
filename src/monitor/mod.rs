@@ -1,5 +1,6 @@
 mod log;
 pub mod inotify;
+pub mod perf;
 
 use std::io::BufRead;
 use std::process::ChildStderr;

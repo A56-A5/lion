@@ -146,9 +146,7 @@ fn main() {
         }
         std::process::exit(exit_codes::INTERNAL_ERROR);
     } else {
-        // Success case
-        println!("✔ Command executed successfully");
-        print_success_reason(&cli);
+        eprintln!("\x1b[90m[LION] sandbox exited cleanly — cage destroyed\x1b[0m");
     }
 }
 
@@ -174,16 +172,7 @@ fn print_diagnostic_box(err: &LionError) {
     eprintln!("+----------------------------------------------------------+");
 }
 
-fn print_success_reason(cli: &Cli) {
-    if let Commands::Run { cmd, .. } = &cli.command {
-        let program = cmd.first().map(|s| s.as_str()).unwrap_or("");
-        let reason = match program {
-            "pwd" => "working directory set via --chdir and project directory is bind-mounted inside sandbox",
-            _ => "command executed normally inside sandbox with project directory mounted",
-        };
-        println!("(reason: {})", reason);
-    }
-}
+
 
 fn print_failure_reason(err: &LionError) {
     let reason = match err {

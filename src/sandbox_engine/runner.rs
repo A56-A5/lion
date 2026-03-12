@@ -141,6 +141,11 @@ pub fn run_sandboxed(
     watch_paths.dedup();
 
     let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, watch_paths));
+
+    // Perf monitor: CPU/RAM graph in a separate terminal window
+    let cmd_label = cmd.first().cloned().unwrap_or_else(|| "sandbox".to_string());
+    let _perf = crate::monitor::perf::PerfHandle::spawn(child.id(), &cmd_label);
+
     let status = child.wait().map_err(|e| LionError::Internal(e.to_string()))?;
 
     if status.success() {
