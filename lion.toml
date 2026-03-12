@@ -49,3 +49,7 @@ access = "ro"
 [[mount]]
 path = "/home/vishnunandan555/Test"
 access = "rw"
+
+[[mount]]
+path = "/home/vishnunandan555/flutter"
+access = "rw"
