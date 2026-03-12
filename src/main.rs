@@ -6,6 +6,7 @@
 
 use clap::{Parser, Subcommand};
 
+pub mod install;
 pub mod sandbox;
 
 /// Predefined exit codes used by L.I.O.N.
@@ -36,6 +37,14 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Perform one-time system setup (requires sudo).
+    ///
+    /// Creates a targeted AppArmor profile that allows bwrap to use user
+    /// namespaces without disabling AppArmor globally.  Run once per machine:
+    ///
+    ///   sudo lion install
+    Install,
+
     /// Run a command inside a bubblewrap sandbox.
     Run {
         /// The executable and arguments to run inside the sandbox.
@@ -65,6 +74,7 @@ fn main() {
 
     // Route the command to the appropriate handler
     let result = match cli.command {
+        Commands::Install => install::run_install(),
         Commands::Run {
             cmd,
             network,
