@@ -1,76 +1,131 @@
 # L.I.O.N Sandbox Exposure Analysis
 
-By default, L.I.O.N follows a **"Deny All"** philosophy. It creates a blank Linux namespace and whitelist-binds only the absolute minimum required for a standard process to function.
+By default, L.I.O.N follows a **"Deny All"** philosophy. It builds a synthetic root from scratch and whitelists only the absolute minimum required for a standard process to function.
 
-This document details exactly what is "leaked" or intentionally exposed to applications running inside the sandbox.
+This document details exactly what is exposed, hidden, and monitored when running inside L.I.O.N.
 
 ---
 
 ## 1. Core Isolation (The Wall)
 
-L.I.O.N uses Linux Namespaces to isolate the following by default:
-- **PID Namespace**: The app cannot see any other processes on your system. It thinks it is PID 2.
-- **User Namespace**: The app maps your UID (e.g., 1000) to a namespaced UID. It cannot gain root privileges on the host.
-- **Network Namespace**: By default (without `--network`), there are **zero** network interfaces. No internet, no LAN, no localhost.
-- **IPC Namespace**: The app cannot use shared memory or message queues to talk to host processes.
-- **UTS Namespace**: The app sees a generic hostname, not your machine's real name.
+L.I.O.N unshares all major Linux namespaces on every run:
+
+| Namespace | Flag | Effect |
+| :--- | :--- | :--- |
+| User | `--unshare-user` | UID/GID remapped. Cannot gain host root. |
+| PID | `--unshare-pid` | Isolated process tree. Cannot see host PIDs. |
+| Network | `--unshare-net` | Zero interfaces by default. No internet, no LAN, no localhost. |
+| IPC | `--unshare-ipc` | No shared memory or message queues with host processes. |
+| UTS | `--unshare-uts` | Fake hostname: reports `lion`, not your machine name. |
+| Cgroup | `--unshare-cgroup` | Isolated cgroup tree. |
+
+Additional hardening flags active on every run:
+
+- **`--die-with-parent`** — if the `lion` process is killed or crashes, the sandbox is killed instantly. No orphan processes ever remain.
+- **`--new-session`** — detaches the sandbox from your terminal session. It cannot send signals (Ctrl+C) to your host shell.
+- **`--tmpfs /`** — the root filesystem starts completely empty. Nothing from the host is visible unless explicitly bind-mounted.
 
 ---
 
-## 2. Hardcoded System Exposures (The Foundation)
+## 2. Filesystem Root Construction
 
-To allow binaries (like `ls`, `node`, `python`) to even start, we must expose system libraries. These are mounted **Read-Only**:
+The sandbox root is built up from scratch in a defined order:
 
-| Path | Purpose | Risk |
-| :--- | :--- | :--- |
-| `/usr` | Standard binaries and libraries. | Low. General system code. |
-| `/bin` | Essential system commands. | Low. Standard tools. |
-| `/lib`, `/lib64` | The C library and dynamic linker. | Low. Required for execution. |
-| `/etc/alternatives` | Symlinks for default versioning. | Low. |
-| `/snap` | Required for Ubuntu Snap-packaged tools. | Medium. Allows discovery of other installed snaps. |
+1. `--tmpfs /` — blank root
+2. `--dir` stubs created: `/usr`, `/bin`, `/lib`, `/lib64`, `/etc`, `/run`
+3. System paths bind-mounted read-only (see table below)
+4. Project directory bind-mounted (read-write or read-only per config)
+5. Optional module paths added (GPU, Wayland, audio — only when explicitly enabled)
+
+| Path | Mount type | Purpose | Risk |
+| :--- | :--- | :--- | :--- |
+| `/usr` | ro-bind | Binaries and libraries | Low |
+| `/bin` | ro-bind | Essential commands | Low |
+| `/lib`, `/lib64` | ro-bind | C library, dynamic linker | Low |
+| `/etc/alternatives` | ro-bind | Version symlinks | Low |
+| `/snap` | ro-bind | Ubuntu Snap tools (if present) | Medium — exposes installed snap names |
 
 ---
 
 ## 3. Project Exposure (The Workspace)
 
-L.I.O.N is a "per-execution" sandbox designed for developers.
-
-- **The Project Root**: The directory where you run `lion` is mounted **Read-Write**. This allows you to compile, run scripts, and generate logs.
-- **`src/` Protection**: As a safety feature, L.I.O.N **re-mounts the `src/` directory as Read-Only**. This prevents a buggy test or malicious NPM/Cargo package from overwriting your source code while it runs.
+- **Project root**: the directory where `lion run` is invoked is mounted **read-write** by default, allowing normal build output, test artifacts, and log files.
+- **`src/` protection**: when the project root is read-write, `src/` is **re-mounted read-only** on top. This prevents a malicious package from overwriting your source code mid-run.
+- **Explicit read-only paths**: additional paths passed via `--ro /path` are mounted read-only inside the sandbox.
 
 ---
 
 ## 4. Environment Variables (The Context)
 
-We strip almost all environment variables. Only these are passed through:
-- `HOME`, `USER`, `LOGNAME`: Basic identity.
-- `PATH`: To find binaries.
-- `LANG`, `LC_ALL`: To maintain your keyboard/text encoding.
-- `XDG_*`: Standard paths for config and cache.
-- `XAUTHORITY`: **Only with `--gui`**. Required for display authentication.
+**All host environment variables are wiped first** via `--clearenv`. This means `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, `NPM_TOKEN`, `SSH_AUTH_SOCK`, `DATABASE_URL`, and every other credential or shell alias in your environment are **completely invisible** inside the sandbox.
+
+Only the following are re-added explicitly:
+
+| Variable | Purpose |
+| :--- | :--- |
+| `HOME`, `USER`, `LOGNAME` | Basic user identity |
+| `PATH` | Binary discovery |
+| `LANG`, `LC_ALL` | Text encoding / locale |
+| `XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Standard XDG paths |
+| `XAUTHORITY` | **Only with `--gui`** — X11 display authentication |
+| `DISPLAY`, `WAYLAND_DISPLAY` | **Only with `--gui`** — display server socket names |
 
 ---
 
 ## 5. Optional Feature Exposures (The Holes)
 
-### Using `--network`
-When enabled, the sandbox shares the host network namespace.
-- **Exposed**: Your full internet connection, local network access, and localhost.
-- **Security Info**: We bind `/etc/resolv.conf`, `/etc/ssl`, and `/etc/pki` read-only so DNS and HTTPS work correctly.
-- **Planned**: Granular profiles (`--net=dns`, `--net=http`) are currently in the design phase to provide protocol-level restriction.
+### `--net=none` (default)
+Network namespace is fully unshared. Zero interfaces. Outbound connections are impossible at the kernel level.
 
-### Using `--gui`
-This is the "widest" hole in the sandbox, required for visual apps.
-- **X11/Wayland Sockets**: `/tmp/.X11-unix` and `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`.
-- **GPU Hardware**: `/dev/dri` (Direct Rendering Infrastructure) and `/sys` (Hardware probing).
-- **Communication**: `/run/user/1000/bus` (D-Bus) and `/run/user/1000/at-spi` (Accessibility).
-- **Sensitive files**: `$XAUTHORITY` (X11 cookie) and `/dev/shm` (Shared memory).
+### `--net=dns`
+Shares the host network namespace. Only `/etc/resolv.conf` is bind-mounted. DNS resolution works; nothing else is explicitly provided.
+
+### `--net=full`
+Shares the host network namespace completely. Also mounts `/etc/resolv.conf`, `/etc/ssl`, and `/etc/pki` read-only so HTTPS works. Full internet access.
+
+### `--gui`
+The widest expansion of the sandbox surface — required for graphical applications:
+
+| What | Why | Risk |
+| :--- | :--- | :--- |
+| `/tmp/.X11-unix` (bind rw) | X11 display sockets | Medium — can observe X11 events |
+| `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY` (bind rw) | Wayland compositor socket | Medium |
+| `$XAUTHORITY` (ro-bind) | X11 auth cookie | Low if app is trusted |
+| `/dev/dri` (dev-bind) | GPU hardware rendering | Medium — raw device access |
+| `/sys` (ro-bind) | Hardware topology for MESA/GPU | Low |
+| `/dev/shm` (bind rw) | Shared memory for GPU buffer swaps | Medium — shared with host |
+| `$XDG_RUNTIME_DIR/bus` | D-Bus user session | High — can talk to host services |
+| `$XDG_RUNTIME_DIR/at-spi` | Accessibility bus | Low |
 
 ---
 
-## 6. What remains HIDDEN (The Secrets)
+## 6. Live Access Monitor
 
-Even with all flags enabled, L.I.O.N **never** exposes:
-- **Your Home Directory**: Apps cannot see your Documents, Downloads, SSH keys, or Browser profiles (unless they are inside the `lion` project folder).
-- **Sensitive System Files**: No access to `/etc/shadow`, `/etc/sudoers`, `/var/log`, or `/root`.
-- **Other Mounted Drives**: No access to `/media`, `/mnt`, or other internal partitions.
+L.I.O.N runs two background monitor threads for every sandbox execution:
+
+**inotify watcher** (allowed access tracking):
+- Watches all bind-mounted paths for `ACCESS`, `OPEN`, `MODIFY`, `CREATE`, `DELETE` events
+- Reports every file the sandboxed process actually touches in real time
+- Stops within 50ms of sandbox exit via a shared stop flag — no hanging threads
+
+**stderr parser** (blocked access tracking):
+- Reads bwrap's stderr pipe line by line
+- Parses `Permission denied`, `Operation not permitted`, and `No such file or directory` on sensitive paths
+- Reports every access attempt the sandbox *denied*
+
+Both streams are printed live with timestamps, ANSI color, and event type tags.
+
+---
+
+## 7. What Remains Hidden (The Secrets)
+
+Even with every flag enabled, L.I.O.N **never** exposes:
+
+- **`~/.ssh/`** — private keys, `known_hosts`, SSH config
+- **`~/.gnupg/`** — GPG keyring
+- **`~/Documents/`, `~/Downloads/`, `~/Desktop/`** — personal files
+- **Browser profiles** — passwords, cookies, session tokens
+- **`/etc/shadow`**, **`/etc/sudoers`** — system credentials
+- **`/var/log/`**, **`/root/`** — system logs, root home
+- **`/media/`**, **`/mnt/`** — mounted drives and external storage
+- **Any credential in environment variables** — wiped by `--clearenv` before the sandbox starts

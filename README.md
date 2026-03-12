@@ -1,94 +1,113 @@
 # L.I.O.N
 
-A lightweight, per-execution filesystem sandbox for Linux using Bubblewrap (`bwrap`).
+> Wrap any command in a hardened Linux sandbox. See every file it touches, every blocked attempt, in real time.
 
-## Features & Maximum Capability
+L.I.O.N is a per-execution filesystem sandbox for Linux using Bubblewrap (`bwrap`). Every `lion run` creates a **fresh, independent namespace cage** from scratch. When the program exits, the cage is gone.
 
-L.I.O.N currently operates as a static, pre-hardcoded sandbox engine. It protects your development environment by isolating processes from the rest of your system.
+## Features
 
-- **Maximum Sandboxing**: Creates an entirely new Linux namespace where your command runs. It isolates user IDs, inter-process communication, Process Trees (PIDs), hostnames, and cgroups. 
-- **Hardcoded System Mounts**: Exposes only basic standard paths read-only to guarantee executables work (`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap`).
-- **Source Protection**: Re-mounts your current working directory as read-write, but strictly restricts the `src/` folder to be read-only so tests cannot maliciously overwrite your code.
-- **Environment Isolation**: Passes only safe environment variables (`HOME`, `USER`, `PATH`, `LANG`, and basic `XDG_*` vars).
-- **Selective Capabilities**: You can opt-in to expose network interfaces (`--network`) or GUI rendering sockets (`--gui`).
+- **Full namespace isolation** — PID, user, IPC, UTS, cgroup, and network namespaces, all unshared by default.
+- **Synthetic root** — the sandbox starts with a blank `/`. Only whitelisted paths are bind-mounted in. Nothing leaks.
+- **Complete environment wipe** — `--clearenv` runs first. `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, `NPM_TOKEN`, shell aliases — all invisible inside the cage.
+- **No orphan processes** — `--die-with-parent` ensures the sandbox is killed the moment `lion` exits or crashes.
+- **Fake identity** — sandbox reports hostname `lion`, detached from your real terminal session.
+- **Live access monitor** — inotify watchers on mounted paths report every file read, write, create, and delete in real time. `bwrap` stderr is parsed simultaneously to catch blocked permission errors.
+- **Source protection** — `src/` is re-mounted read-only even when the project root is read-write.
+- **Selective capabilities** — opt-in to network (`--net`) or GUI sockets (`--gui`) only when needed.
 
-For a detailed breakdown of EXACTLY what this sandbox exposes to applications, see [EXPOSURES.md](file:///home/vishnunandan555/Projects/lion/EXPOSURES.md).
+For a full breakdown of what is exposed vs. hidden, see [EXPOSURES.md](EXPOSURES.md).
 
 ## System Setup
 
 L.I.O.N requires `bwrap` to be installed on your system.
-Additionally, modern Linux distributions (like Ubuntu 24+) restrict unprivileged user namespaces via AppArmor. L.I.O.N provides an installation command to configure this automatically without sacrificing global security:
+On Ubuntu 24+ and other distros that restrict unprivileged user namespaces via AppArmor, run the one-time setup:
 
 ```bash
 # Creates a targeted AppArmor profile specifically for bwrap
 sudo lion install
 ```
 
-## Usage Guide
-
-Execute any command safely isolated from your home directory:
+## Usage
 
 ```bash
-# Basic sandboxed execution (No Network, No GUI)
+# Basic sandboxed execution — network off, full isolation
 lion run -- node script.js
-lion run -- cargo build
+lion run -- python3 malware.py
+lion run -- cargo test
 
-# Allow internet access (e.g., for downloading packages or resolving DNS)
-lion run --network -- curl https://example.com
+# Enable network access
+lion run --net=full -- curl https://example.com
+lion run --net=dns  -- dig google.com
 
-# Allow GUI rendering (Exposes X11/Wayland sockets and fonts)
+# Allow GUI rendering (exposes X11/Wayland sockets)
 lion run --gui -- firefox
 
-# Debug Run: See what bwrap command will be executed without actually running it
+# Mount additional paths read-only inside the sandbox
+lion run --ro /home/user/docs -- python3 read_docs.py
+
+# Dry run — print the bwrap command without executing
 lion run --dry-run -- ls -la
 
-# The --optional flag exists but does nothing in the current build
-lion run --optional audio -- ls
+# Debug — enable verbose tracing logs
+lion run --debug -- node index.js
 ```
 
-## Shortcomings & Limitations
+## What the monitor shows
 
-Because the tool relies on monolithic hardcoded paths, it trades compatibility for simplicity:
+While the sandbox runs, L.I.O.N streams a live access log to stderr:
 
-- **Bubblewrap Dependency**: Requires `bwrap` to be installed on the host system.
-- **Limited Compatibility**: Hardcoding `/usr` and `/lib` works for Ubuntu/Debian, but will fail on heavily customized distros (e.g., NixOS, Arch subsets) or when symlinks are deeply nested.
-- **GUI Support**: GUI sandboxing requires GPU hardware access (`/dev/dri`) and session sockets. While most native apps work, some complex D-Bus services or global shortcuts may be restricted.
-- **Linux Only**: Fundamentally tied to Linux namespaces.
-- **Snap Packages are Incompatible**: Ubuntu's default `firefox` and other apps installed via `snap` **will not work**. Snap packages rely on `snap-confine`, which requires root-level capabilities (like `CAP_MAC_ADMIN`). Because L.I.O.N creates rootless, unprivileged user namespaces (`bwrap --unshare-user`), the Linux kernel explicitly strips these capabilities, making it technically impossible to run Snaps inside this sandbox.
+```
+╔══════════════════════════════════════════════════╗
+║  LION MONITOR  ·  live sandbox events            ║
+╚══════════════════════════════════════════════════╝
+[LION] 20:14:03  ✅ READ    /home/user/project/src/main.rs
+[LION] 20:14:03  ✏️  WRITE   /home/user/project/output.txt
+[LION] 20:14:04  BLOCKED  /etc/shadow: Permission denied
+[LION] 20:14:04  BLOCKED  /home/user/.ssh/id_rsa: Permission denied
+[LION] monitor stopped
+```
 
-### How to run Firefox in L.I.O.N:
+- **Green READ** — allowed file access (inotify on bind-mounted paths)
+- **Yellow WRITE / Blue CREATE / Red DELETE** — filesystem mutations inside the sandbox
+- **Red BLOCKED** — access attempt that the sandbox denied (parsed from bwrap stderr)
 
-To run Firefox securely inside the sandbox, you must use the native binary version instead of the Snap version.
+The monitor stops cleanly within 50ms of the sandboxed process exiting.
 
-1.  **Download Firefox**: Get the Linux 64-bit `.tar.bz2` from [Mozilla.org](https://www.mozilla.org/en-US/firefox/all/#product-desktop-release).
-2.  **Extract**: `tar xfj firefox-*.tar.bz2`
-3.  **Run with L.I.O.N**:
-    ```bash
-    # Ensure you are inside the extracted firefox directory
-    lion run --network --gui -- ./firefox
-    ```
+## Limitations
 
-- **Rootless Limitations**: Only works in rootless setups; deeply nested system administration tasks cannot be sandboxed correctly.
-- **No Resource Limits**: Currently does not restrict CPU or RAM usage limit.
+- **Bubblewrap dependency** — requires `bwrap` on the host.
+- **Ubuntu/Debian paths** — hardcoded mounts (`/usr`, `/lib`) work on most distros but will need adjustment on NixOS or heavily customized setups.
+- **No seccomp filter** — syscalls are not filtered; namespace isolation is the primary barrier.
+- **No resource limits** — CPU and RAM usage are currently unrestricted.
+- **Snap packages incompatible** — Snap's `snap-confine` requires `CAP_MAC_ADMIN`, which is stripped in rootless user namespaces. Use native binaries instead.
+- **Linux only** — fundamentally tied to Linux namespaces.
+
+### Running Firefox (non-Snap)
+
+```bash
+# Download native binary from Mozilla, extract, then:
+lion run --net=full --gui -- ./firefox
+```
 
 ## Architecture
 
-L.I.O.N is built with a modular engine located in `src/sandbox_engine/`:
-
-- `builder.rs`: Configures bubblewrap namespaces.
-- `environment.rs`: Sanitizes environment variables.
-- `mounts.rs`: Handles all bind-mount logic.
-- `runner.rs`: Orchestrates the execution flow.
-- `userns.rs`: Pre-flight checks for User Namespaces.
+```
+src/
+  sandbox_engine/
+    builder.rs      — namespace flags, synthetic root construction
+    environment.rs  — --clearenv + safe allowlist
+    mounts.rs       — bind-mount logic (ro/rw/dev)
+    runner.rs       — orchestrates the full execution pipeline
+    userns.rs       — pre-flight user namespace check
+  monitor/
+    mod.rs          — MonitorHandle: spawns stderr + inotify threads
+    log.rs          — bwrap stderr parser (BLOCKED events)
+    inotify.rs      — inotify watcher (READ/WRITE/CREATE/DELETE events)
+```
 
 ## Roadmap
 
-### 1. Granular Networking Profiles
-We are moving away from the simple `--network` boolean toggles towards protocol-aware profiles:
-- `none`: Default isolation.
-- `dns`: Only allow UDP/TCP port 53.
-- `http`: Restrict access to ports 80/443 via a user-space proxy (slirp4netns + internal broker).
-- `full`: Complete host network sharing.
-
-### 2. The Scanner Module
-To make L.I.O.N portable across diverse Linux ecosystems, we plan to construct a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus/DRI sockets, mapping them perfectly into the sandbox before execution.
+- **Live TUI** — ratatui dashboard showing exposure panel, scrolling access log, CPU/memory gauges, and one-key sandbox kill.
+- **Proxy-based network filter** — intercept HTTP/HTTPS at the proxy level; allow/block by domain.
+- **Profile system** — `lion expose / unexpose` commands to manage a persistent `~/.config/lion/profile.json`.
+- **Scanner** — auto-detect available modules (GPU, Wayland, audio) on first run.

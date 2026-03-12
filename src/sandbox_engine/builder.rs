@@ -24,12 +24,19 @@ pub fn build_bwrap(
         "--unshare-pid",    // Isolate process tree
         "--unshare-uts",    // Isolate hostname
         "--unshare-cgroup", // Isolate cgroups
-        "--tmpfs",
-        "/tmp", // Fresh tmp system
-        "--proc",
-        "/proc", // Fresh procfs
-        "--dev",
-        "/dev", // Fresh dev system
+        "--die-with-parent", // Kill sandbox if lion process dies — no orphans
+        "--new-session",     // Detach from host terminal session
+        "--hostname", "lion", // Fake hostname inside sandbox
+        "--tmpfs", "/",      // Synthetic root — nothing leaks in
+        "--tmpfs", "/tmp",   // Fresh tmp
+        "--proc", "/proc",   // Fresh procfs
+        "--dev", "/dev",     // Fresh dev
+        "--dir", "/usr",
+        "--dir", "/bin",
+        "--dir", "/lib",
+        "--dir", "/lib64",
+        "--dir", "/etc",
+        "--dir", "/run",
     ]);
 
     let mount_flag = if project_ro { "--ro-bind" } else { "--bind" };
