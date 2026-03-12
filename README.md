@@ -39,18 +39,30 @@ lion run -- cargo test
 lion run --net=full -- curl https://example.com
 lion run --net=dns  -- dig google.com
 
+# Domain-specific filtering (requires proxy)
+lion run --net=full --domain google.com --domain api.github.com -- curl https://google.com
+
 # Allow GUI rendering (exposes X11/Wayland sockets)
-lion run --gui -- firefox
+lion run --gui -- xterm
 
 # Mount additional paths read-only inside the sandbox
-lion run --ro /home/user/docs -- python3 read_docs.py
+lion run --ro /usr/share/fonts --ro /etc/ssl -- python3 app.py
 
-# Dry run — print the bwrap command without executing
+# Multi-flag combination
+lion run --net=dns --gui --ro ~/data -- vlc ~/data/video.mp4
+
+# Dry run — print the generated bwrap command
 lion run --dry-run -- ls -la
 
-# Debug — enable verbose tracing logs
+# Debug — enable verbose internal tracing logs
 lion run --debug -- node index.js
 ```
+
+## TUI Separation
+
+By default, L.I.O.N attempts to launch a separate terminal window (`gnome-terminal` or `kitty`) for live monitoring. This keeps the primary terminal focused on your application's output while security events stream in a dedicated dashboard.
+
+If no supported terminal is found, L.I.O.N falls back to inline monitoring in the same terminal.
 
 ## What the monitor shows
 
