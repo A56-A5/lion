@@ -80,6 +80,19 @@ When using `--net=allow`, L.I.O.N looks for a domain allow-list in this order:
 
 To customise, drop a `proxy.toml` in your project root. See the repo's [`proxy.toml`](proxy.toml) for the full template.
 
+### Proxy environment variables injected
+
+`--net=allow` sets all of the following so every tool routes through the filter:
+
+| Variable | Used by |
+|---|---|
+| `HTTP_PROXY` / `http_proxy` | curl, wget, Python requests, Go |
+| `HTTPS_PROXY` / `https_proxy` | curl, wget, Python requests, Go |
+| `ALL_PROXY` / `all_proxy` | curl, some Go tools |
+| `npm_config_proxy` | **npm** (ignores `HTTP_PROXY`) |
+| `npm_config_https_proxy` | **npm** |
+| `PIP_PROXY` | pip |
+
 ## TUI Separation
 
 When a sandbox starts, L.I.O.N automatically opens two extra terminal windows:
@@ -122,6 +135,37 @@ access = "ro"
 ```
 
 See the repo's [`lion.toml`](lion.toml) for the full template.
+
+## Exit Codes
+
+### L.I.O.N own exit codes
+
+These are emitted by `lion` itself when sandbox setup fails — the sandboxed command never ran.
+
+| Code | Meaning |
+|---|---|
+| `0` | Success — sandbox ran and command exited cleanly |
+| `1` | Internal lion error (bug or unexpected failure) |
+| `125` | Sandbox setup failed (bwrap couldn't start) |
+| `126` | Command found but not executable (`chmod +x` needed) |
+| `127` | Command not found inside the sandbox |
+
+### Sandboxed program exit codes (passed through)
+
+When the program *inside* the sandbox fails, its exit code is forwarded directly. Common ones you'll see:
+
+| Code | Program | Meaning | Fix |
+|---|---|---|---|
+| `1` | any | Generic failure | Check program output |
+| `2` | any | Misuse / bad arguments | Check command syntax |
+| `6` | curl | Couldn't resolve host | Add `--net=allow` or `--net=full` |
+| `7` | curl | Failed to connect | Add `--net=full` |
+| `35` | curl | SSL handshake failed | Add `--net=full` |
+| `46` | npm | Network error | Use `--net=allow` (sets npm proxy vars) |
+| `52` | npm | Empty/bad proxy response | Proxy bug — update lion |
+| `128+N` | any | Killed by signal N | Usually OOM or timeout |
+
+Logs are always written to `~/.lion/logs/last-run.log` regardless of exit code.
 
 ## Limitations
 

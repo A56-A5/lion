@@ -14,73 +14,91 @@ _ANSI    = re.compile(r"\033\[[0-9;]*m")
 
 # ── proc readers ─────────────────────────────────────────────────────────────
 
-def read_proc_ticks(pid):
+def get_process_tree(root_pid):
+    """Find all recursive children of root_pid by scanning /proc."""
+    pids = {root_pid}
     try:
-        with open(f"/proc/{pid}/stat") as f:
-            fields = f.read().split()
-        return int(fields[13]) + int(fields[14])
-    except:
-        return None
+        # Build parent -> children map
+        children = {}
+        for p in os.listdir("/proc"):
+            if p.isdigit():
+                try:
+                    with open(f"/proc/{p}/stat") as f:
+                        fields = f.read().split()
+                        ppid = int(fields[3])
+                        if ppid not in children: children[ppid] = []
+                        children[ppid].append(int(p))
+                except: continue
+        
+        # Recursive collect
+        stack = [root_pid]
+        while stack:
+            curr = stack.pop()
+            if curr in children:
+                for child in children[curr]:
+                    if child not in pids:
+                        pids.add(child)
+                        stack.append(child)
+    except: pass
+    return pids
 
-def read_proc_state(pid):
-    try:
-        with open(f"/proc/{pid}/stat") as f:
-            return f.read().split()[2]
-    except:
-        return "?"
+def read_aggregated_ticks(pids):
+    total = 0
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                fields = f.read().split()
+                total += int(fields[13]) + int(fields[14])
+        except: continue
+    return total
 
-def read_mem_status(pid):
+def read_aggregated_state(pids):
+    states = set()
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                states.add(f.read().split()[2])
+        except: continue
+    if "R" in states: return "R"
+    if "D" in states: return "D"
+    if "S" in states: return "S"
+    return "?" if not states else list(states)[0]
+
+def read_aggregated_mem(pids):
     rss = vmsz = threads = 0
-    try:
-        with open(f"/proc/{pid}/status") as f:
-            for line in f:
-                if   line.startswith("VmRSS:"):    rss     = int(line.split()[1])
-                elif line.startswith("VmSize:"):   vmsz    = int(line.split()[1])
-                elif line.startswith("Threads:"):  threads = int(line.split()[1])
-    except:
-        pass
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if   line.startswith("VmRSS:"):    rss     += int(line.split()[1])
+                    elif line.startswith("VmSize:"):   vmsz    += int(line.split()[1])
+                    elif line.startswith("Threads:"):  threads += int(line.split()[1])
+        except: continue
     return rss, vmsz, threads
 
-def read_io(pid):
+def read_aggregated_io(pids):
     rb = wb = 0
-    try:
-        with open(f"/proc/{pid}/io") as f:
-            for line in f:
-                if   line.startswith("read_bytes:"):  rb = int(line.split()[1])
-                elif line.startswith("write_bytes:"): wb = int(line.split()[1])
-    except:
-        pass
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/io") as f:
+                for line in f:
+                    if   line.startswith("read_bytes:"):  rb += int(line.split()[1])
+                    elif line.startswith("write_bytes:"): wb += int(line.split()[1])
+        except: continue
     return rb, wb
 
 # ── layout helpers ────────────────────────────────────────────────────────────
-#
-#  Every rendered frame recomputes W from the terminal width.
-#  All derived widths flow from W to guarantee nothing ever overflows:
-#
-#    W      = outer box width  (clamped 72–96)
-#    BW     = progress-bar inner width = W - 34
-#             derived so the bar row fills exactly W-4 visible chars:
-#             "LBL  [" + BW + "]  " + pct(6) + "  pk " + pk(6) = 26 + BW = W-4  ✓
-#    SW     = sparkline width = BW
-#             trimmed to exactly BW chars so the spark row also stays bounded.
-#
-#  row(content) pads/clips content to exactly W-4 visible chars then wraps
-#  it in ║...║ borders, giving a total printed width of W characters.
 
 def get_W():
     return max(72, min(shutil.get_terminal_size((80, 24)).columns, 96))
 
 def vlen(s):
-    """Visible length of a string containing ANSI escape codes."""
     return len(_ANSI.sub("", s))
 
 def row(content, W):
-    """Render one full-width box row.  Content is placed after a 1-char left
-    margin and padded (or hard-clipped) so the total printed width is exactly W."""
     vis = vlen(content)
-    avail = W - 4          # ║ + sp + [content+padding] + sp + ║
+    avail = W - 4
     if vis > avail:
-        # Hard-clip: strip ANSI, truncate to avail, no colours—beats broken lines
         content = _ANSI.sub("", content)[:avail]
         vis = avail
     pad = avail - vis
@@ -112,7 +130,6 @@ def pct_c(p):
     return "\033[1;32m"
 
 def fmt_rate(n):
-    """Format bytes/s to a fixed 10-char string: e.g. '  1.2 MB/s'."""
     for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
         if n < 1024:
             return f"{n:6.1f} {unit}"
@@ -120,7 +137,6 @@ def fmt_rate(n):
     return f"{n:6.1f} TB/s"
 
 def gradient_bar(pct, BW):
-    """Per-character colour: green → yellow → red as the bar fills."""
     g = int(BW * 0.60)
     y = int(BW * 0.80)
     n = max(0, min(BW, int(pct / 100.0 * BW)))
@@ -167,9 +183,11 @@ peak_cpu   = 0.0
 peak_mem   = 0.0
 sample     = 0
 t0         = time.monotonic()
-prev_ticks = read_proc_ticks(PID) or 0
-prev_time  = time.monotonic()
-prev_rb, prev_wb = read_io(PID)
+
+active_pids = get_process_tree(PID)
+prev_ticks  = read_aggregated_ticks(active_pids)
+prev_time   = time.monotonic()
+prev_rb, prev_wb = read_aggregated_io(active_pids)
 
 enter_alt(); cls()
 time.sleep(INTERVAL)
@@ -178,11 +196,11 @@ time.sleep(INTERVAL)
 
 try:
     while True:
-        now       = time.monotonic()
-        cur_ticks = read_proc_ticks(PID)
-
+        now         = time.monotonic()
+        active_pids = get_process_tree(PID)
+        
         # ── exit-detection ────────────────────────────────────────────────────
-        if cur_ticks is None:
+        if not os.path.exists(f"/proc/{PID}"):
             W = get_W()
             home()
             sys.stdout.write(
@@ -195,7 +213,9 @@ try:
             time.sleep(3)
             break
 
-        # ── CPU (wall-clock method: always correct, multi-core aware) ─────────
+        cur_ticks = read_aggregated_ticks(active_pids)
+
+        # ── CPU ──────────────────────────────────────────────────────────────
         elapsed    = max(now - prev_time, 1e-4)
         cpu_pct    = max(0.0, min(
                         100.0 * (os.cpu_count() or 1),
@@ -204,12 +224,12 @@ try:
         prev_time  = now
 
         # ── memory ────────────────────────────────────────────────────────────
-        rss_kb, vsz_kb, threads = read_mem_status(PID)
+        rss_kb, vsz_kb, threads = read_aggregated_mem(active_pids)
         mem_mb = rss_kb / 1024.0
         vsz_mb = vsz_kb / 1024.0
 
         # ── I/O rates ─────────────────────────────────────────────────────────
-        cur_rb, cur_wb = read_io(PID)
+        cur_rb, cur_wb = read_aggregated_io(active_pids)
         io_r = max(0, cur_rb - prev_rb) / elapsed
         io_w = max(0, cur_wb - prev_wb) / elapsed
         prev_rb, prev_wb = cur_rb, cur_wb
@@ -223,12 +243,12 @@ try:
 
         uptime = int(now - t0)
         up_str = f"{uptime // 60}m {uptime % 60:02d}s"
-        state  = read_proc_state(PID)
+        state  = read_aggregated_state(active_pids)
 
-        # ── layout constants for this frame ───────────────────────────────────
+        # ── layout constants ──────────────────────────────────────────────────
         W  = get_W()
-        BW = W - 34      # bar width  (see layout comment above)
-        SW = BW          # sparkline trimmed to same width as bar
+        BW = W - 34
+        SW = BW
 
         # ── bars ──────────────────────────────────────────────────────────────
         cpu_bar  = gradient_bar(cpu_pct, BW)
@@ -236,51 +256,40 @@ try:
         mem_pct  = min(100.0, mem_mb / mem_axis * 100.0)
         mem_bar  = gradient_bar(mem_pct, BW)
 
-        # Trim sparklines to exactly SW chars so they never overflow
         csp = sparkline(cpu_hist)[-SW:]
         msp = sparkline(mem_hist, mem_axis)[-SW:]
 
-        # ── assemble and write atomically ─────────────────────────────────────
-        #
-        #  Row anatomy (all values fixed-width to guarantee exact BW+26 vis chars):
-        #    "LBL  [" + BW + "]  " + val(6) + "  pk " + pk(6) = 26 + BW = W-4  ✓
-        #
         cc  = pct_c(cpu_pct)
         mc  = pct_c(mem_pct)
         pkc = pct_c(peak_cpu)
 
         lines = [
             top(W),
-            # ── header ──────────────────────────────────────────────────────
             row(f" pid \033[1m{PID:<7}\033[0m"
                 f"  cmd \033[1;36m{CMD:<22}\033[0m"
                 f"  {state_badge(state)}"
                 f"  \033[90m▲ {up_str}\033[0m", W),
             div(W),
-            # ── CPU ─────────────────────────────────────────────────────────
             row(f"\033[1mCPU\033[0m  [{cpu_bar}]  {cc}{cpu_pct:5.1f}%\033[0m  pk {pkc}{peak_cpu:5.1f}%\033[0m", W),
             row(f"     \033[90m{csp}\033[0m"
                 f"  \033[90m· last {HISTORY // 2}s"
                 f"  · thr \033[0m\033[1m{threads}\033[0m\033[90m"
                 f" / {os.cpu_count()} cpus\033[0m", W),
             div(W),
-            # ── MEM ─────────────────────────────────────────────────────────
             row(f"\033[1mMEM\033[0m  [{mem_bar}]  {mc}{mem_mb:5.0f}M\033[0m  pk \033[90m{peak_mem:5.0f}M\033[0m", W),
             row(f"     \033[90m{msp}\033[0m"
                 f"  \033[90m· rss \033[0m\033[1m{mem_mb:6.1f} MB\033[0m"
-                f"\033[90m  virt \033[0m\033[90m{vsz_mb:.0f} MB\033[0m", W),
+                f"  \033[90mpids: \033[0m\033[1m{len(active_pids)}\033[0m", W),
             div(W),
-            # ── I/O ─────────────────────────────────────────────────────────
             row(f"\033[1mI/O\033[0m  "
                 f"\033[90m↓\033[0m \033[1;32m{fmt_rate(io_r)}\033[0m  "
                 f"\033[90m↑\033[0m \033[1;33m{fmt_rate(io_w)}\033[0m", W),
             div(W),
-            # ── footer ──────────────────────────────────────────────────────
             row(f"\033[90m sample \033[0m\033[1m#{sample:<5}\033[0m"
                 f"\033[90m  ·  {INTERVAL*1000:.0f}ms interval"
                 f"  ·  Ctrl-C to close\033[0m", W),
             bot(W),
-            "",   # trailing newline so cursor lands below the box
+            "",
         ]
 
         home()
