@@ -45,3 +45,7 @@ access = "ro"
 # [[mount]]
 # path = "~/.config/gcloud/application_default_credentials.json"
 # access = "ro"
+
+[[mount]]
+path = "/home/vishnunandan555/Test"
+access = "rw"

@@ -111,7 +111,7 @@ pub fn run_sandboxed(
                     bwrap.arg("--setenv").arg("HTTPS_PROXY").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("http_proxy").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("https_proxy").arg(&proxy_url);
-                    info!("Proxy running on port {} — domains: {:?}", p.port, final_domains);
+                    info!("Proxy ready on :{} — {} domain(s) allowed", p.port, final_domains.len());
                     Some(p)
                 }
                 Err(e) => {

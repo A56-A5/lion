@@ -73,31 +73,51 @@ fn load_from_path(path: &Path, label: &str) -> ProxyConfig {
 }
 
 /// The Python proxy script embedded at compile time.
-/// Uses only stdlib: socket, threading, http.server — no pip required.
+/// Uses only stdlib: socket, threading — no pip required.
 const PROXY_SCRIPT: &str = r#"
 import socket
 import threading
 import sys
-import os
+import time
 
-# Handle wildcard or comma-separated list
+# Parse domain allow-list
 raw_allowed = sys.argv[1].split(",")
 if "*" in raw_allowed:
-    ALLOWED = None
+    ALLOWED = None  # allow everything
 else:
     ALLOWED = set(d.strip().lower() for d in raw_allowed if d.strip())
 
-PORT    = int(sys.argv[2])
+PORT = int(sys.argv[2])
 
-def log(status, domain):
-    tag   = "\033[1;32mALLOWED\033[0m" if status else "\033[1;31mBLOCKED\033[0m"
-    print(f"[LION-PROXY] {tag}  {domain}", flush=True)
+def ts():
+    return time.strftime("%H:%M:%S")
 
-def is_allowed(domain):
-    host = domain.split(":")[0].lower()
+def log(status, domain, reason=""):
+    tag  = "\033[1;32mALLOWED\033[0m" if status else "\033[1;31mBLOCKED\033[0m"
+    sfx  = f"  \033[90m({reason})\033[0m" if reason else ""
+    print(f"[LION-PROXY]  {ts()}  {tag}  {domain}{sfx}", flush=True)
+
+def extract_host(domain_or_url: str) -> str:
+    """Return bare hostname from either 'host:port' or 'http://host/path'."""
+    s = domain_or_url.strip().lower()
+    if s.startswith("http://") or s.startswith("https://"):
+        # strip scheme
+        s = s.split("//", 1)[1]
+        # strip path
+        s = s.split("/")[0]
+    # strip port
+    return s.split(":")[0]
+
+def is_allowed(domain_or_url: str):
     if ALLOWED is None:
         return True
-    return host in ALLOWED or any(host.endswith("." + d) for d in ALLOWED)
+    host = extract_host(domain_or_url)
+    if host in ALLOWED:
+        return True
+    # subdomain match: api.github.com matches "github.com"
+    if any(host.endswith("." + d) for d in ALLOWED):
+        return True
+    return False
 
 def pipe(src, dst):
     try:
@@ -109,19 +129,29 @@ def pipe(src, dst):
     except:
         pass
     finally:
-        try: src.close()
-        except: pass
-        try: dst.close()
-        except: pass
+        for s in (src, dst):
+            try: s.shutdown(socket.SHUT_RDWR)
+            except: pass
+            try: s.close()
+            except: pass
+
+def recv_headers(conn):
+    """Read from conn until we have the complete HTTP header block (ends with \\r\\n\\r\\n)."""
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return None
+        data += chunk
+        if len(data) > 65536:   # guard against oversized headers
+            return None
+    return data
 
 def handle(conn):
     try:
-        data = b""
-        while b"\r\n" not in data:
-            chunk = conn.recv(4096)
-            if not chunk:
-                return
-            data += chunk
+        data = recv_headers(conn)
+        if not data:
+            return
 
         first_line = data.split(b"\r\n")[0].decode(errors="replace")
         parts = first_line.split()
@@ -129,50 +159,63 @@ def handle(conn):
             return
         method, target = parts[0], parts[1]
 
-        # HTTPS — CONNECT tunnel
+        # ── HTTPS — CONNECT tunnel ───────────────────────────────────────────
         if method == "CONNECT":
-            domain = target  # e.g. "api.github.com:443"
-            if is_allowed(domain):
-                log(True, domain)
-                host_port = domain.rsplit(":", 1)
-                host = host_port[0]
-                port = int(host_port[1]) if len(host_port) > 1 else 443
-                remote = socket.create_connection((host, port), timeout=10)
+            if is_allowed(target):
+                log(True, target)
+                host_part, _, port_str = target.rpartition(":")
+                host = host_part or target
+                port = int(port_str) if port_str.isdigit() else 443
+                try:
+                    remote = socket.create_connection((host, port), timeout=15)
+                except Exception as e:
+                    log(False, target, f"connect failed: {e}")
+                    conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                    return
                 conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                # any bytes after the CONNECT headers in our buffer → forward to remote
+                header_end = data.find(b"\r\n\r\n") + 4
+                leftover = data[header_end:]
+                if leftover:
+                    remote.sendall(leftover)
                 t = threading.Thread(target=pipe, args=(remote, conn), daemon=True)
                 t.start()
                 pipe(conn, remote)
             else:
-                log(False, domain)
+                log(False, target, "domain not in allow-list")
                 conn.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
-        # HTTP — read Host header
+
+        # ── HTTP — plain request ─────────────────────────────────────────────
         else:
-            headers = data.split(b"\r\n")
+            # Extract Host header (fallback to URL if absent)
             host_header = ""
-            for h in headers[1:]:
-                if h.lower().startswith(b"host:"):
-                    host_header = h[5:].strip().decode(errors="replace")
+            for line in data.split(b"\r\n")[1:]:
+                if line.lower().startswith(b"host:"):
+                    host_header = line[5:].strip().decode(errors="replace")
                     break
+
             domain = host_header or target
             if is_allowed(domain):
                 log(True, domain)
-                # Simple forward: reconstruct and relay
-                host_port = host_header.split(":")
-                host = host_port[0]
-                port = int(host_port[1]) if len(host_port) > 1 else 80
-                remote = socket.create_connection((host, port), timeout=10)
+                hp = host_header.split(":")
+                host = hp[0]
+                port = int(hp[1]) if len(hp) > 1 and hp[1].isdigit() else 80
+                try:
+                    remote = socket.create_connection((host, port), timeout=15)
+                    remote.settimeout(15)
+                except Exception as e:
+                    log(False, domain, f"connect failed: {e}")
+                    conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                    return
                 remote.sendall(data)
-                resp = b""
-                while True:
-                    chunk = remote.recv(4096)
-                    if not chunk:
-                        break
-                    resp += chunk
-                conn.sendall(resp)
-                remote.close()
+                # Stream response back to client (handles keep-alive chunked responses)
+                t = threading.Thread(target=pipe, args=(remote, conn), daemon=True)
+                t.start()
+                pipe(conn, remote)
             else:
-                log(False, domain)
+                log(False, domain, "domain not in allow-list")
                 conn.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+
     except Exception as e:
         pass
     finally:
@@ -182,8 +225,8 @@ def handle(conn):
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", PORT))
-srv.listen(50)
-print(f"[LION-PROXY] listening on 127.0.0.1:{PORT}", flush=True)
+srv.listen(100)
+print(f"[LION-PROXY] ready  127.0.0.1:{PORT}  ({len(ALLOWED) if ALLOWED is not None else '*'} domains)", flush=True)
 while True:
     try:
         conn, _ = srv.accept()
