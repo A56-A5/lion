@@ -15,7 +15,6 @@ pub fn run_sandboxed(
     cmd: Vec<String>,
     network_mode: crate::sandbox_engine::network::NetworkMode,
     dry_run: bool,
-    gui: bool,
     ro_paths: Vec<String>,
     allowed_domains: Vec<String>,
     optional_names: Vec<String>,
@@ -59,7 +58,7 @@ pub fn run_sandboxed(
     let mut bwrap = build_bwrap(project_path, network_mode, dry_run, project_ro);
 
     // 4. Mounts
-    apply_system_mounts(&mut bwrap, gui);
+    apply_system_mounts(&mut bwrap);
 
     if has_src && !project_ro {
         // Only separately pin src/ as ro when project itself is rw
@@ -92,27 +91,54 @@ pub fn run_sandboxed(
         }
     }
 
-    // 4d. Optional Modules from optionalmodules.toml + CLI --optional
+    // 4d. Environment
+    apply_environment(&mut bwrap);
+
+    // 4e. Optional Modules from optionalmodules.toml + CLI --optional
     let opt_cfg = crate::optional_modules::OptionalModulesConfig::load(&project_dir)
         .map_err(|e| LionError::Internal(e.to_string()))?;
     
     for m in opt_cfg.modules {
         let is_requested = optional_names.contains(&m.name);
         if m.state == 1 || is_requested {
-            let p = std::path::Path::new(&m.path);
-            if p.exists() {
-                info!("Mounting optional module '{}': {}", m.name, m.path);
-                bwrap.arg("--bind").arg(&m.path).arg(&m.path);
-            } else {
-                warn!("Optional module '{}' path does not exist: {}", m.name, m.path);
+            info!("Activating optional module '{}'", m.name);
+
+            // 1. Process mounts
+            for mount in &m.mounts {
+                let src = crate::optional_modules::resolve_vars(&mount.src);
+                let dst = crate::optional_modules::resolve_vars(&mount.dst);
+                let src_path = std::path::Path::new(&src);
+
+                if src_path.exists() {
+                    let flag = match mount.mode.as_str() {
+                        "rw" | "bind" => "--bind",
+                        "dev" | "dev-bind" => "--dev-bind",
+                        _ => "--ro-bind",
+                    };
+                    bwrap.arg(flag).arg(&src).arg(&dst);
+                } else if is_requested {
+                    warn!("Requested module '{}' mount path does not exist: {}", m.name, src);
+                }
+            }
+
+            // 2. Process legacy single path
+            if let Some(path) = &m.path {
+                let resolved = crate::optional_modules::resolve_vars(path);
+                if std::path::Path::new(&resolved).exists() {
+                    bwrap.arg("--bind").arg(&resolved).arg(&resolved);
+                }
+            }
+
+            // 3. Process environment variables
+            for var_name in &m.env {
+                if let Ok(val) = std::env::var(var_name) {
+                    bwrap.arg("--setenv").arg(var_name).arg(val);
+                }
             }
         }
     }
 
-    // 5. Env
-    apply_environment(&mut bwrap, gui);
-
-    // Proxy: only for --net=allow (domain-filtered). --net=full bypasses proxy entirely.
+    // 6. Net
     let _proxy: Option<ProxyHandle> = match network_mode {
         crate::sandbox_engine::network::NetworkMode::Allow => {
             // Load persistent domains from proxy.toml (project dir first, then ~/.config/lion/)

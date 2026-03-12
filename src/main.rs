@@ -71,11 +71,6 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
 
-        /// Enable GUI app support.
-        /// Exposes X11/Wayland sockets, fonts, and GPU drivers.
-        #[arg(long, default_value_t = false)]
-        gui: bool,
-
         /// Activate optional system modules by name (e.g. `--optional audio`).
         #[arg(long, value_name = "MODULE")]
         optional: Vec<String>,
@@ -151,7 +146,6 @@ fn main() {
             cmd,
             net,
             dry_run,
-            gui,
             optional,
             debug,
             ro,
@@ -166,7 +160,6 @@ fn main() {
                 cmd.clone(),
                 net.clone(),
                 *dry_run,
-                *gui,
                 ro.clone(),
                 domains.clone(),
                 optional.clone(),

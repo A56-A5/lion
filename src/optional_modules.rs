@@ -8,10 +8,40 @@ use std::path::Path;
 use std::fs;
 use anyhow::{Context, Result};
 
+pub fn resolve_vars(path: &str) -> String {
+    let mut resolved = path.to_string();
+    let vars = [
+        ("HOME", std::env::var("HOME").unwrap_or_default()),
+        ("USER", std::env::var("USER").unwrap_or_default()),
+        ("XDG_RUNTIME_DIR", std::env::var("XDG_RUNTIME_DIR").unwrap_or_default()),
+    ];
+
+    for (key, val) in vars {
+        let placeholder = format!("${{{}}}", key);
+        resolved = resolved.replace(&placeholder, &val);
+    }
+    resolved
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModuleMount {
+    pub src: String,
+    pub dst: String,
+    #[serde(default = "default_mount_mode")]
+    pub mode: String, // "ro", "rw", "dev"
+}
+
+fn default_mount_mode() -> String { "ro".to_string() }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OptionalModule {
     pub name: String,
-    pub path: String,
+    #[serde(default)]
+    pub path: Option<String>, // Legacy single path support
+    #[serde(default)]
+    pub mounts: Vec<ModuleMount>,
+    #[serde(default)]
+    pub env: Vec<String>, // List of env vars to forward
     pub state: i32, // 1 = enabled, 0 = blocked
 }
 
@@ -58,7 +88,12 @@ pub fn list(project_dir: &Path) -> Result<()> {
         } else {
             "\x1b[1;31mblocked\x1b[0m"
         };
-        println!(" - {}: {} ({})", m.name, m.path, state_str);
+        let path_info = if let Some(p) = &m.path {
+            p.clone()
+        } else {
+            format!("{} mounts", m.mounts.len())
+        };
+        println!(" - {}: {} ({})", m.name, path_info, state_str);
     }
     Ok(())
 }
@@ -69,7 +104,13 @@ pub fn add(project_dir: &Path, name: String, path: String, state: i32) -> Result
         anyhow::bail!("Module with name '{}' already exists", name);
     }
     
-    config.modules.push(OptionalModule { name: name.clone(), path, state });
+    config.modules.push(OptionalModule { 
+        name: name.clone(), 
+        path: Some(path.clone()), 
+        mounts: vec![ModuleMount { src: path.clone(), dst: path, mode: "rw".to_string() }],
+        env: Vec::new(),
+        state 
+    });
     config.save(project_dir)?;
     println!("✅ Added optional module: {}", name);
     Ok(())
