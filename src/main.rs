@@ -1,6 +1,6 @@
 //! `main.rs`
 //!
-//! This is the entry point for the LION CLI.
+//! This is the entry point for the L.I.O.N CLI.
 //! It defines the command-line interface using `clap` and routes execution
 //! to the sandbox runner (`sandbox.rs`).
 
@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 pub mod sandbox;
 
-/// Predefined exit codes used by LION.
+/// Predefined exit codes used by L.I.O.N.
 ///
 /// We map internal errors to `1`, CLI misuse to `2`, sandbox failures to `125`.
 /// The actual command inside the sandbox will return its own nested exit code.
@@ -26,7 +26,7 @@ pub mod exit_codes {
 #[command(version = "0.1.0")]
 #[command(
     about = "Lightweight filesystem sandbox for Linux",
-    long_about = "LION is a lightweight, per-execution filesystem sandbox for Linux using bubblewrap."
+    long_about = "L.I.O.N is a lightweight, per-execution filesystem sandbox for Linux using bubblewrap."
 )]
 #[command(arg_required_else_help = true)]
 pub struct Cli {
@@ -82,7 +82,7 @@ fn main() {
             std::process::exit(code);
         }
 
-        // Otherwise it's an internal LION setup error.
+        // Otherwise it's an internal L.I.O.N setup error.
         eprintln!("error: {e:#}");
         std::process::exit(exit_codes::INTERNAL_ERROR);
     }

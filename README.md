@@ -1,10 +1,10 @@
-# LION
+# L.I.O.N
 
 A lightweight, per-execution filesystem sandbox for Linux using Bubblewrap (`bwrap`).
 
 ## Features & Maximum Capability
 
-LION currently operates as a static, pre-hardcoded sandbox engine. It protects your development environment by isolating processes from the rest of your system.
+L.I.O.N currently operates as a static, pre-hardcoded sandbox engine. It protects your development environment by isolating processes from the rest of your system.
 
 - **Maximum Sandboxing**: Creates an entirely new Linux namespace where your command runs. It isolates user IDs, inter-process communication, Process Trees (PIDs), hostnames, and cgroups. 
 - **Hardcoded System Mounts**: Exposes only basic standard paths read-only to guarantee executables work (`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`).
@@ -44,4 +44,4 @@ Because the tool relies on hardcoded paths, it trades compatibility for simplici
 
 Currently, the engine just blindly assumes `/usr` and `/bin` exist and are sufficient.
 
-**Why we need a scanner back:** To make LION portable across diverse Linux ecosystems, we plan to re-introduce a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus sockets, mapping them perfectly into the sandbox before execution. This is necessary to support more complex IDEs, language servers, and varying OS structures without breaking the sandbox.
+**Why we need a scanner back:** To make L.I.O.N portable across diverse Linux ecosystems, we plan to re-introduce a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus sockets, mapping them perfectly into the sandbox before execution. This is necessary to support more complex IDEs, language servers, and varying OS structures without breaking the sandbox.
