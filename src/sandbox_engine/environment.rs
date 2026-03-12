@@ -10,7 +10,18 @@ use std::process::Command;
 /// This prevents "environment leakage" where host secrets or aliases
 /// might affect the sandboxed application's behavior.
 pub fn apply_environment(bwrap: &mut Command, gui: bool) {
+    // 1. Clear the environment inside the sandbox
+    bwrap.arg("--clearenv");
+
+    // 2. Set strictly safe environment variables
+    bwrap.args(["--setenv", "PATH", "/usr/bin:/bin"]);
+    bwrap.args(["--setenv", "HOME", "/home/lion"]); // Fixed home for sandbox
+    bwrap.args(["--setenv", "USER", "lion"]);
+    bwrap.args(["--setenv", "LOGNAME", "lion"]);
+    bwrap.args(["--setenv", "LANG", "C.UTF-8"]);
+
     // If GUI is allowed, pass display servers to allow windowing.
+    // Note: These are now only added AFTER env-clear.
     if gui {
         if let Ok(display) = std::env::var("DISPLAY") {
             bwrap.arg("--setenv").arg("DISPLAY").arg(&display);
@@ -20,25 +31,6 @@ pub fn apply_environment(bwrap: &mut Command, gui: bool) {
                 .arg("--setenv")
                 .arg("WAYLAND_DISPLAY")
                 .arg(&wayland_display);
-        }
-    }
-
-    // Pass essential identity / localized env vars
-    for var in [
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "LANG",
-        "LC_ALL",
-        "PATH",
-        "XDG_RUNTIME_DIR",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_CACHE_HOME",
-        "XAUTHORITY",
-    ] {
-        if let Ok(val) = std::env::var(var) {
-            bwrap.arg("--setenv").arg(var).arg(val);
         }
     }
 }
