@@ -4,6 +4,7 @@ pub mod errors;
 pub mod logger;
 pub mod monitor;
 pub mod config;
+pub mod proxy;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
