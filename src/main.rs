@@ -46,6 +46,22 @@ pub enum Commands {
         /// Domain to allow (e.g. google.com).
         #[arg(long)]
         domain: Option<String>,
+
+        /// Shorthand to enable network module
+        #[arg(long)]
+        network: bool,
+        /// Shorthand to enable gpu module
+        #[arg(long)]
+        gpu: bool,
+        /// Shorthand to enable wayland module
+        #[arg(long)]
+        wayland: bool,
+        /// Shorthand to enable x11 module
+        #[arg(long)]
+        x11: bool,
+        /// Shorthand to enable audio module
+        #[arg(long)]
+        audio: bool,
     },
 
     /// Remove a writable path, disable a module, or restrict a domain.
@@ -58,6 +74,22 @@ pub enum Commands {
         /// Domain to restrict.
         #[arg(long)]
         domain: Option<String>,
+
+        /// Shorthand to disable network module
+        #[arg(long)]
+        network: bool,
+        /// Shorthand to disable gpu module
+        #[arg(long)]
+        gpu: bool,
+        /// Shorthand to disable wayland module
+        #[arg(long)]
+        wayland: bool,
+        /// Shorthand to disable x11 module
+        #[arg(long)]
+        x11: bool,
+        /// Shorthand to disable audio module
+        #[arg(long)]
+        audio: bool,
     },
 
     /// Show current exposure profile.
@@ -97,20 +129,60 @@ fn main() {
     // Route the command to the appropriate handler
     let result: anyhow::Result<()> = match &cli.command {
         Commands::Install => install::run_install().map_err(Into::into),
-        Commands::Expose { path, module, domain } => {
+        Commands::Expose { path, module, domain, network, gpu, wayland, x11, audio } => (|| {
             if let Err(e) = logger::init_logging(false) {
                 eprintln!("critical error: failed to initialize logger: {e}");
                 std::process::exit(exit_codes::INTERNAL_ERROR);
             }
-            profile::expose::handle_expose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
-        }
-        Commands::Unexpose { path, module, domain } => {
+            
+            // Collect all modules to expose
+            let mut modules = Vec::new();
+            if let Some(m) = module { modules.push(m.clone()); }
+            if *network { modules.push("network".to_string()); }
+            if *gpu { modules.push("gpu".to_string()); }
+            if *wayland { modules.push("wayland".to_string()); }
+            if *x11 { modules.push("x11".to_string()); }
+            if *audio { modules.push("audio".to_string()); }
+
+            if modules.is_empty() {
+                profile::expose::handle_expose(path.clone(), None, domain.clone()).map_err(Into::into)
+            } else {
+                for m in modules {
+                   profile::expose::handle_expose(None, Some(m), None)?;
+                }
+                if path.is_some() || domain.is_some() {
+                    profile::expose::handle_expose(path.clone(), None, domain.clone())?;
+                }
+                Ok(())
+            }
+        })(),
+        Commands::Unexpose { path, module, domain, network, gpu, wayland, x11, audio } => (|| {
             if let Err(e) = logger::init_logging(false) {
                 eprintln!("critical error: failed to initialize logger: {e}");
                 std::process::exit(exit_codes::INTERNAL_ERROR);
             }
-            profile::unexpose::handle_unexpose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
-        }
+
+            // Collect all modules to unexpose
+            let mut modules = Vec::new();
+            if let Some(m) = module { modules.push(m.clone()); }
+            if *network { modules.push("network".to_string()); }
+            if *gpu { modules.push("gpu".to_string()); }
+            if *wayland { modules.push("wayland".to_string()); }
+            if *x11 { modules.push("x11".to_string()); }
+            if *audio { modules.push("audio".to_string()); }
+
+            if modules.is_empty() {
+                profile::unexpose::handle_unexpose(path.clone(), None, domain.clone()).map_err(Into::into)
+            } else {
+                for m in modules {
+                   profile::unexpose::handle_unexpose(None, Some(m), None)?;
+                }
+                if path.is_some() || domain.is_some() {
+                    profile::unexpose::handle_unexpose(path.clone(), None, domain.clone())?;
+                }
+                Ok(())
+            }
+        })(),
         Commands::Status => {
             profile::status::handle_status().map_err(Into::into)
         }
