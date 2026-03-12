@@ -72,11 +72,10 @@ pub fn build_bwrap(
             }
         }
         NetworkMode::Http => {
-            // Placeholder: In a full implementation, this would trigger the proxy.
-            // For now, we allow full network but print a warning about the proxy.
+            // Proxy is launched in runner.rs — bwrap still needs full net to reach the proxy's localhost port
             apply_full_network_mounts(&mut bwrap);
             if !dry_run {
-                info!("Network: HTTP/HTTPS (proxy not yet implemented, allowing full)");
+                info!("Network: HTTP/HTTPS via domain proxy");
             }
         }
     }

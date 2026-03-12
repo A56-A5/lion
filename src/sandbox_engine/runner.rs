@@ -95,11 +95,10 @@ pub fn run_sandboxed(
     // 5. Env
     apply_environment(&mut bwrap, gui);
 
-    // Proxy: spawn before bwrap so the port is ready when the sandbox starts
+    // Proxy: only for --net=http (domain-filtered). --net=full bypasses proxy entirely.
     let _proxy: Option<ProxyHandle> = match network_mode {
-        crate::sandbox_engine::network::NetworkMode::Http
-        | crate::sandbox_engine::network::NetworkMode::Full => {
-            // Load persistent domains from proxy.toml
+        crate::sandbox_engine::network::NetworkMode::Http => {
+            // Load persistent domains from proxy.toml (project dir first, then ~/.config/lion/)
             let proxy_cfg = crate::proxy::load_config(&project_dir);
             let mut final_domains = allowed_domains.clone();
             final_domains.extend(proxy_cfg.domains);

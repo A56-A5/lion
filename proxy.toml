@@ -1,8 +1,68 @@
-# Default whitelisted domains for L.I.O.N Proxy
+# ─────────────────────────────────────────────────────────────────────────────
+# L.I.O.N — proxy.toml   (domain allow-list for --net=http mode)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Only applies when you run:   lion run --net=http -- <command>
+# Ignored for:  --net=none | --net=dns | --net=full
+#
+# HOW IT WORKS
+# ────────────
+# An embedded Python proxy intercepts every HTTP and HTTPS request made by the
+# sandboxed process.  Requests to domains in this list are forwarded normally;
+# all other requests are rejected with HTTP 403 FORBIDDEN.
+#
+# SCOPE RULES
+# ────────────
+# • A bare domain  "example.com"  matches ONLY that exact host.
+# • To also allow sub-domains add them explicitly:
+#       "example.com"
+#       "api.example.com"
+#       "cdn.example.com"
+#
+# FILE LOOKUP ORDER
+# ─────────────────
+# 1. ./proxy.toml             ← this file (project-local, highest priority)
+# 2. ~/.config/lion/proxy.toml  ← global user default (lowest priority)
+# Only the first file found is used.
+#
+# ADD YOUR OWN
+# ────────────
+# Just append entries to the list below, one quoted string per line:
+#
+#   domains = [
+#       "registry.npmjs.org",   # ← existing entry
+#       "my-internal-cdn.com",  # ← your new entry
+#   ]
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
 domains = [
-    "google.com",
+    # ── npm / Node.js ─────────────────────────────────────────────────────────
+    "registry.npmjs.org",
+    "npmjs.org",
+    "nodejs.org",
+
+    # ── pip / PyPI ────────────────────────────────────────────────────────────
+    "pypi.org",
+    "files.pythonhosted.org",
+    "bootstrap.pypa.io",
+
+    # ── Rust / Cargo ──────────────────────────────────────────────────────────
+    "crates.io",
+    "static.crates.io",
+    "index.crates.io",
+
+    # ── GitHub ────────────────────────────────────────────────────────────────
     "github.com",
     "api.github.com",
-    "crates.io",
-    "pypi.org"
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "codeload.github.com",
+
+    # ── General utilities ─────────────────────────────────────────────────────
+    "google.com",
+
+    # ── Add your own domains below ────────────────────────────────────────────
+    # "my-private-registry.example.com",
+    # "cdn.example.com",
 ]

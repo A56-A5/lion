@@ -16,15 +16,29 @@ pub struct ProxyConfig {
 }
 
 pub fn load_config(project_dir: &Path) -> ProxyConfig {
-    let path = project_dir.join("proxy.toml");
-    if !path.exists() {
-        return ProxyConfig::default();
+    // 1. Project-local proxy.toml (highest priority)
+    let local = project_dir.join("proxy.toml");
+    if local.exists() {
+        return load_from_path(&local, "local");
     }
 
-    match std::fs::read_to_string(&path) {
+    // 2. Global config: ~/.config/lion/proxy.toml
+    if let Ok(home) = std::env::var("HOME") {
+        let global = std::path::PathBuf::from(home).join(".config/lion/proxy.toml");
+        if global.exists() {
+            return load_from_path(&global, "global");
+        }
+    }
+
+    tracing::info!("No proxy.toml found — all domains blocked. Add ~/.config/lion/proxy.toml to set defaults.");
+    ProxyConfig::default()
+}
+
+fn load_from_path(path: &Path, label: &str) -> ProxyConfig {
+    match std::fs::read_to_string(path) {
         Ok(contents) => match toml::from_str::<ProxyConfig>(&contents) {
             Ok(cfg) => {
-                tracing::info!("Loaded proxy.toml from {}", project_dir.display());
+                tracing::info!("Loaded {} proxy.toml from {}", label, path.display());
                 cfg
             }
             Err(e) => {

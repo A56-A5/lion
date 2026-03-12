@@ -143,7 +143,9 @@ fn launch_terminal_monitor(watch_paths: &[String]) -> Option<(String, std::proce
 
     // 3. Try available terminals
     let terminals = [
-        ("gnome-terminal", vec!["--", "bash", "-c"]),
+        // --wait keeps gnome-terminal foreground so our Child handle stays live
+        // and child.kill() in Drop actually closes the window.
+        ("gnome-terminal", vec!["--wait", "--", "bash", "-c"]),
         ("kitty", vec!["bash", "-c"]),
     ];
 

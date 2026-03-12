@@ -1,11 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# L.I.O.N — lion.toml   (per-project sandbox configuration)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Place this file in your project root.  lion reads it automatically.
+# All paths support ~ for your home directory.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
 [sandbox]
-# "ro" = project directory is read-only inside the sandbox
-# "rw" = project directory is read-write (default)
+# ── Project directory access ──────────────────────────────────────────────────
+# Controls how the current working directory is exposed inside the sandbox.
+#
+#   "ro"  — read-only   (safe default: code can be read but not modified)
+#   "rw"  — read-write  (use when the program needs to write output files)
+#
 project_access = "ro"
 
-# Expose extra paths into the sandbox.
-# "ro" = read-only,  "rw" = read-write
-
+# ── Extra bind mounts ─────────────────────────────────────────────────────────
+# Expose additional host paths into the sandbox.
+# Each [[mount]] block adds one path.
+#
+# Fields:
+#   path    (required) — absolute or ~ path on the host
+#   access  (required) — "ro" (read-only) or "rw" (read-write)
+#
+# Examples:
+#
+#   Read-only config file:
 [[mount]]
 path = "~/.npmrc"
 access = "ro"
+#
+#   Read-only directory (e.g. shared dataset):
+# [[mount]]
+# path = "~/datasets/imagenet"
+# access = "ro"
+#
+#   Read-write output directory (process writes results here):
+# [[mount]]
+# path = "/tmp/lion-output"
+# access = "rw"
+#
+#   Expose a credentials file needed at runtime:
+# [[mount]]
+# path = "~/.config/gcloud/application_default_credentials.json"
+# access = "ro"

@@ -306,11 +306,14 @@ impl PerfHandle {
         std::fs::write(&script_path, PERF_SCRIPT).ok()?;
 
         let script_str = script_path.to_string_lossy().to_string();
-        let lion_cmd = format!("python3 {} {} {}; echo; read -p '[press enter to close]'",
-            script_str, pid, cmd_label);
+        // No trailing 'read' prompt — the Python script already shows a
+        // 3-second "PID exited" banner before it exits, then the terminal
+        // auto-closes (gnome-terminal uses --wait so child.kill() works).
+        let lion_cmd = format!("python3 {} {} {}", script_str, pid, cmd_label);
 
         let terminals: &[(&str, &[&str])] = &[
-            ("gnome-terminal", &["--"]),
+            // --wait keeps gnome-terminal foreground so our Child handle is live
+            ("gnome-terminal", &["--wait", "--"]),
             ("kitty",          &[]),
             ("xterm",          &["-e"]),
             ("konsole",        &["-e"]),
