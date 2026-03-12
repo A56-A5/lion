@@ -67,35 +67,36 @@ Only the following are re-added explicitly:
 | `PATH` | Binary discovery |
 | `LANG`, `LC_ALL` | Text encoding / locale |
 | `XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Standard XDG paths |
-| `XAUTHORITY` | **Only with `--gui`** — X11 display authentication |
-| `DISPLAY`, `WAYLAND_DISPLAY` | **Only with `--gui`** — display server socket names |
+| `XAUTHORITY` | Only when forwarded by an enabled optional module such as `X11` |
+| `DISPLAY`, `WAYLAND_DISPLAY` | Only when forwarded by enabled optional modules such as `X11` / `Wayland` |
 
 ---
 
 ## 5. Optional Feature Exposures (The Holes)
 
 ### `--net=none` (default)
+
 Network namespace is fully unshared. Zero interfaces. Outbound connections are impossible at the kernel level.
 
-### `--net=dns`
-Shares the host network namespace. Only `/etc/resolv.conf` is bind-mounted. DNS resolution works; nothing else is explicitly provided.
-
 ### `--net=full`
+
 Shares the host network namespace completely. Also mounts `/etc/resolv.conf`, `/etc/ssl`, and `/etc/pki` read-only so HTTPS works. Full internet access.
 
-### `--gui`
-The widest expansion of the sandbox surface — required for graphical applications:
+### Optional modules via `saved.toml` / `--optional`
+
+The widest expansion of the sandbox surface is now controlled by optional modules.
+Common GUI-related modules include `X11`, `Wayland`, `GPU`, `Fonts`, and `D-Bus`:
 
 | What | Why | Risk |
 | :--- | :--- | :--- |
-| `/tmp/.X11-unix` (bind rw) | X11 display sockets | Medium — can observe X11 events |
-| `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY` (bind rw) | Wayland compositor socket | Medium |
-| `$XAUTHORITY` (ro-bind) | X11 auth cookie | Low if app is trusted |
-| `/dev/dri` (dev-bind) | GPU hardware rendering | Medium — raw device access |
-| `/sys` (ro-bind) | Hardware topology for MESA/GPU | Low |
-| `/dev/shm` (bind rw) | Shared memory for GPU buffer swaps | Medium — shared with host |
-| `$XDG_RUNTIME_DIR/bus` | D-Bus user session | High — can talk to host services |
-| `$XDG_RUNTIME_DIR/at-spi` | Accessibility bus | Low |
+| `/tmp/.X11-unix` (bind rw) | `X11` display sockets | Medium — can observe X11 events |
+| `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY` (bind rw) | `Wayland` compositor socket | Medium |
+| `$XAUTHORITY` (ro-bind) | `X11` auth cookie | Low if app is trusted |
+| `/dev/dri` (dev-bind) | `GPU` hardware rendering | Medium — raw device access |
+| `/sys` (ro-bind) | `GPU` topology for MESA/GPU | Low |
+| `/dev/shm` (bind rw) | `GPU` shared memory for buffer swaps | Medium — shared with host |
+| `$XDG_RUNTIME_DIR/bus` | `D-Bus` user session | High — can talk to host services |
+| `$XDG_RUNTIME_DIR/at-spi` | `D-Bus` accessibility bus | Low |
 
 ---
 
@@ -104,15 +105,18 @@ The widest expansion of the sandbox surface — required for graphical applicati
 L.I.O.N runs specialized background monitor logic:
 
 **TUI Separation**:
+
 - Launches a separate terminal (`gnome-terminal` or `kitty`) for events.
 - Communications happen via a temporary FIFO in `/tmp/lion-monitor-<pid>`.
 - Gracefully falls back to inline monitoring if no separate terminal is available.
 
 **inotify watcher** (allowed access tracking):
+
 - Watches all bind-mounted paths for `ACCESS`, `OPEN`, `MODIFY`, `CREATE`, `DELETE`.
 - Reports every file the sandboxed process actually touches.
 
 **stderr parser** (blocked access tracking):
+
 - Reads bwrap's stderr pipe.
 - Reports attempts that the sandbox denied (e.g., `Permission denied` on `/etc/shadow`).
 

@@ -293,7 +293,7 @@ Insert the proxy block **between** those two lines:
 
 ## Step 4 — Add `--domains` flag to `src/main.rs`
 
-Find the `Run` subcommand struct fields (the block with `--net`, `--dry-run`, `--gui`):
+Find the `Run` subcommand struct fields (the block with `--net`, `--dry-run`, and related run flags):
 
 ```rust
         /// Mount a directory as read-only inside the sandbox (repeatable, e.g. --ro /home/user/docs).
@@ -304,23 +304,22 @@ Find the `Run` subcommand struct fields (the block with `--net`, `--dry-run`, `-
 
 Add one field after `ro`:
 ```rust
-        /// Domains the proxy will allow through (requires --net=http or --net=full).
+        /// Domains the proxy will allow through (requires --net=allow or --net=full).
         /// Use '*' to allow all. Repeatable: --domain google.com --domain api.github.com
         #[arg(long = "domain", value_name = "DOMAIN")]
         domains: Vec<String>,
     },
 ```
 
-Then find the `sandbox_engine::run_sandboxed(...)` call in `main()` and add `domains.clone()` as the last argument:
+Then find the `sandbox_engine::run_sandboxed(...)` call in `main()` and add `domains.clone()` before `optional.clone()`:
 ```rust
             sandbox_engine::run_sandboxed(
                 cmd.clone(),
                 net.clone(),
                 *dry_run,
-                *gui,
-                optional.clone(),
                 ro.clone(),
-                domains.clone(),   // ← ADD THIS
+                domains.clone(),
+                optional.clone(),
             )
 ```
 

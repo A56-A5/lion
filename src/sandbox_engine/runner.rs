@@ -94,14 +94,27 @@ pub fn run_sandboxed(
     // 4d. Environment
     apply_environment(&mut bwrap);
 
-    // 4e. Optional Modules from optionalmodules.toml + CLI --optional
+    // 4e. Optional Modules from saved.toml + CLI --optional
+    // Modules are loaded if EITHER:
+    //   1. They have state == 1 (enabled) in saved.toml, OR
+    //   2. They are explicitly requested via --optional <name> on the CLI
+    // This allows mixing saved configuration with per-run overrides.
     let opt_cfg = crate::optional_modules::OptionalModulesConfig::load(&project_dir)
         .map_err(|e| LionError::Internal(e.to_string()))?;
     
     for m in opt_cfg.modules {
         let is_requested = optional_names.contains(&m.name);
-        if m.state == 1 || is_requested {
-            info!("Activating optional module '{}'", m.name);
+        let is_enabled = m.state == 1;
+        
+        if is_enabled || is_requested {
+            let activation_reason = if is_enabled && is_requested {
+                "saved + CLI"
+            } else if is_enabled {
+                "saved"
+            } else {
+                "CLI"
+            };
+            info!("Activating optional module '{}' ({})", m.name, activation_reason);
 
             // 1. Process mounts
             for mount in &m.mounts {

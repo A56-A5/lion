@@ -1,0 +1,126 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# L.I.O.N — saved.toml   (saved optional modules configuration)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Modules can be activated in two ways:
+#   1. Set `state = 1` here to auto-load them on every `lion run`
+#   2. Pass `--optional <name>` on the CLI for a one-shot run
+#
+# Commands:
+#   lion saved status
+#   lion saved enable <name>
+#   lion saved disable <name>
+#   lion saved add --name <name> --path <path>
+#   lion saved remove <name>
+#
+# Add your own simple module example:
+# [[modules]]
+# name = "MyData"
+# path = "/path/to/data"
+# state = 0
+#
+# Add your own advanced module example:
+# [[modules]]
+# name = "MyGuiBits"
+# env = ["DISPLAY"]
+# state = 0
+#
+# [[modules.mounts]]
+# src = "/tmp/.X11-unix"
+# dst = "/tmp/.X11-unix"
+# mode = "rw"
+
+[[modules]]
+name = "TestAssets"
+path = "/tmp/lion_test_assets"
+mounts = []
+env = []
+state = 1
+
+[[modules]]
+name = "LogData"
+path = "/tmp/lion-logs"
+mounts = []
+env = []
+state = 0
+
+[[modules]]
+name = "X11"
+env = [
+    "DISPLAY",
+    "XAUTHORITY",
+]
+state = 1
+
+[[modules.mounts]]
+src = "/tmp/.X11-unix"
+dst = "/tmp/.X11-unix"
+mode = "rw"
+
+[[modules.mounts]]
+src = "${XAUTHORITY}"
+dst = "${XAUTHORITY}"
+mode = "ro"
+
+[[modules.mounts]]
+src = "${HOME}/.Xauthority"
+dst = "${HOME}/.Xauthority"
+mode = "ro"
+
+[[modules]]
+name = "Wayland"
+env = [
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+]
+state = 1
+
+[[modules.mounts]]
+src = "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+dst = "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+mode = "rw"
+
+[[modules]]
+name = "GPU"
+env = []
+state = 1
+
+[[modules.mounts]]
+src = "/dev/dri"
+dst = "/dev/dri"
+mode = "dev"
+
+[[modules.mounts]]
+src = "/sys"
+dst = "/sys"
+mode = "ro"
+
+[[modules.mounts]]
+src = "/dev/shm"
+dst = "/dev/shm"
+mode = "rw"
+
+[[modules]]
+name = "Fonts"
+env = []
+state = 1
+
+[[modules.mounts]]
+src = "/usr/share/fonts"
+dst = "/usr/share/fonts"
+mode = "ro"
+
+[[modules]]
+name = "D-Bus"
+env = []
+state = 1
+
+[[modules.mounts]]
+src = "${XDG_RUNTIME_DIR}/bus"
+dst = "${XDG_RUNTIME_DIR}/bus"
+mode = "rw"
+
+[[modules.mounts]]
+src = "${XDG_RUNTIME_DIR}/at-spi/bus"
+dst = "${XDG_RUNTIME_DIR}/at-spi/bus"
+mode = "rw"

@@ -36,11 +36,14 @@ mod exit_codes {
 {all-args}{after-help}
 
 EXAMPLES:
-    lion run -- ls -la                  Run 'ls' in isolated environment
+    lion run -- ls -la                         Run 'ls' in isolated environment
     lion run --net=full -- curl google.com     Full internet access
-    lion run --net=allow -- npm install         Only proxy.toml domains allowed
-    lion run --gui -- xclock            GUI support enabled
-    lion run --ro /tmp -- python script.py    Mount host /tmp as read-only
+    lion run --net=allow -- npm install        Only proxy.toml domains allowed
+    lion run --optional X11 -- xclock          Activate X11 module for GUI app
+    lion run --ro /tmp -- python script.py     Mount host /tmp as read-only
+    lion saved status                          View all saved optional modules
+    lion saved enable GPU                      Enable GPU module permanently
+    lion run --optional GPU -- glxgears        Override: activate GPU for this run only
 ")]
 pub struct Cli {
     #[command(subcommand)]
@@ -71,7 +74,9 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
 
-        /// Activate optional system modules by name (e.g. `--optional audio`).
+        /// Activate optional system modules by name (e.g. `--optional X11`).
+        /// These override saved module states in saved.toml.
+        /// Use 'lion saved status' to see all available modules.
         #[arg(long, value_name = "MODULE")]
         optional: Vec<String>,
 
@@ -101,18 +106,28 @@ pub enum Commands {
         watch_paths: Vec<String>,
     },
 
-    /// Manage project-local optional modules.
-    Modules {
+    /// Manage saved optional modules (saved.toml).
+    Saved {
         #[command(subcommand)]
-        sub: ModuleCommands,
+        sub: SavedCommands,
     },
 }
 
 #[derive(Subcommand)]
-pub enum ModuleCommands {
-    /// List all configured optional modules.
-    List,
-    /// Add a new optional module to the project.
+pub enum SavedCommands {
+    /// Show all available modules with their current state.
+    Status,
+    /// Enable a saved module by name.
+    Enable {
+        /// Name of the module to enable.
+        name: String,
+    },
+    /// Disable a saved module by name.
+    Disable {
+        /// Name of the module to disable.
+        name: String,
+    },
+    /// Add a new module to the saved modules configuration.
     Add {
         /// Unique name for the module.
         #[arg(long)]
@@ -124,14 +139,9 @@ pub enum ModuleCommands {
         #[arg(long, default_value_t = false)]
         enabled: bool,
     },
-    /// Remove an optional module by name.
+    /// Remove a saved module by name.
     Remove {
         /// Name of the module to remove.
-        name: String,
-    },
-    /// Toggle a module between enabled and blocked.
-    Toggle {
-        /// Name of the module to toggle.
         name: String,
     },
 }
@@ -170,16 +180,17 @@ fn main() {
             // Monitor mode doesn't need full logging init, it's the UI itself.
             monitor::run_monitor_subcommand(fifo.clone(), watch_paths.clone()).map_err(Into::into)
         }
-        Commands::Modules { sub } => (|| {
+        Commands::Saved { sub } => (|| {
             let project_dir = std::env::current_dir().context("failed to get current directory")?;
             match sub {
-                ModuleCommands::List => optional_modules::list(&project_dir),
-                ModuleCommands::Add { name, path, enabled } => {
+                SavedCommands::Status => optional_modules::status(&project_dir),
+                SavedCommands::Enable { name } => optional_modules::enable(&project_dir, name),
+                SavedCommands::Disable { name } => optional_modules::disable(&project_dir, name),
+                SavedCommands::Add { name, path, enabled } => {
                     let state = if *enabled { 1 } else { 0 };
                     optional_modules::add(&project_dir, name.clone(), path.clone(), state)
                 }
-                ModuleCommands::Remove { name } => optional_modules::remove(&project_dir, name),
-                ModuleCommands::Toggle { name } => optional_modules::toggle(&project_dir, name),
+                SavedCommands::Remove { name } => optional_modules::remove(&project_dir, name),
             }
         })().map_err(Into::into),
     };

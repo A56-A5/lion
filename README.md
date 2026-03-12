@@ -15,7 +15,7 @@ L.I.O.N is a per-execution filesystem sandbox for Linux using Bubblewrap (`bwrap
 - **Real-time perf monitor** — CPU and RAM usage streamed as an ASCII bar graph with spark-line history, in a third terminal window.
 - **Source protection** — `src/` is re-mounted read-only even when the project root is read-write.
 - **Domain-filtered networking** — `--net=allow` runs a built-in Python proxy; only domains in `proxy.toml` (or the built-in defaults) can be reached. `--net=full` gives unrestricted access.
-- **Selective capabilities** — opt-in to network (`--net`) or GUI sockets (`--gui`) only when needed.
+- **Selective capabilities** — opt-in to network (`--net`) or saved optional modules (`--optional`, `saved.toml`) only when needed.
 
 For a full breakdown of what is exposed vs. hidden, see [EXPOSURES.md](EXPOSURES.md).
 
@@ -28,6 +28,49 @@ On Ubuntu 24+ and other distros that restrict unprivileged user namespaces via A
 # Creates a targeted AppArmor profile specifically for bwrap
 sudo lion install
 ```
+
+## Quick Start for New Users
+
+If this is your first time using L.I.O.N, follow this order:
+
+1. Install `bwrap` on your system.
+1. Run `sudo lion install` once if your distro restricts user namespaces.
+1. Move into the project you want to sandbox.
+1. Start with a harmless command:
+
+```bash
+lion run -- pwd
+lion run -- ls -la
+```
+
+1. If your command needs internet, try:
+
+```bash
+lion run --net=allow -- npm install
+```
+
+1. If your app needs GUI or desktop access, enable only the modules you need:
+
+```bash
+lion saved status
+lion run --optional X11 -- xterm
+```
+
+## Core Idea
+
+L.I.O.N works with three main layers:
+
+1. **Filesystem isolation** — only mounted paths are visible.
+2. **Network control** — choose `none`, `allow`, or `full`.
+3. **Optional modules** — selectively expose things like X11, Wayland, GPU, fonts, or D-Bus.
+
+The safest default is:
+
+```bash
+lion run -- your-command
+```
+
+Then add only what the program actually needs.
 
 ## Usage
 
@@ -48,9 +91,11 @@ lion run --net=allow -- pip install requests
 # Add extra domains on top of proxy.toml
 lion run --net=allow --domain my-registry.example.com -- npm install
 
-# Allow GUI rendering (exposes X11/Wayland sockets + GPU)
-lion run --gui -- xterm
-lion run --net=full --gui -- ./firefox
+# Use saved optional modules (X11 / Wayland / GPU / D-Bus / Fonts)
+lion saved status
+lion saved enable X11
+lion run --optional X11 -- xterm
+lion run --net=full --optional X11 --optional GPU -- ./firefox
 
 # Mount additional paths read-only inside the sandbox
 lion run --ro /usr/share/fonts -- python3 app.py
@@ -62,10 +107,54 @@ lion run --dry-run -- ls -la
 lion run --debug -- node index.js
 ```
 
+## First Real Examples
+
+### Run untrusted Python code
+
+```bash
+lion run -- python3 suspicious_script.py
+```
+
+### Run tests without internet
+
+```bash
+lion run -- cargo test
+lion run -- pytest
+lion run -- npm test
+```
+
+### Install dependencies with filtered internet
+
+```bash
+lion run --net=allow -- npm install
+lion run --net=allow -- pip install requests
+lion run --net=allow -- cargo build
+```
+
+### Give full internet only when necessary
+
+```bash
+lion run --net=full -- curl https://example.com
+lion run --net=full -- git clone https://github.com/user/repo.git
+```
+
+### Let the sandbox read extra host files
+
+```bash
+lion run --ro /usr/share/fonts -- python3 app.py
+lion run --ro /etc/ssl -- curl https://example.com
+```
+
+### Dry-run the generated sandbox command
+
+```bash
+lion run --dry-run -- python3 app.py
+```
+
 ## Network Modes
 
 | Flag | Behaviour |
-|---|---|
+| --- | --- |
 | *(default)* | Fully blocked — isolated network namespace |
 | `--net=allow` | Only domains in `proxy.toml` reachable (built-in defaults if no file found) |
 | `--net=full` | Unrestricted internet access |
@@ -85,7 +174,7 @@ To customise, drop a `proxy.toml` in your project root. See the repo's [`proxy.t
 `--net=allow` sets all of the following so every tool routes through the filter:
 
 | Variable | Used by |
-|---|---|
+| --- | --- |
 | `HTTP_PROXY` / `http_proxy` | curl, wget, Python requests, Go |
 | `HTTPS_PROXY` / `https_proxy` | curl, wget, Python requests, Go |
 | `ALL_PROXY` / `all_proxy` | curl, some Go tools |
@@ -104,7 +193,7 @@ Both windows **close automatically** when the sandbox exits. If no supported ter
 
 ## What the monitor shows
 
-```
+```text
 ╔══════════════════════════════════════════════════╗
 ║  LION MONITOR  ·  live sandbox events            ║
 ╚══════════════════════════════════════════════════╝
@@ -136,6 +225,159 @@ access = "ro"
 
 See the repo's [`lion.toml`](lion.toml) for the full template.
 
+## saved.toml — saved optional modules
+
+Drop a [saved.toml](saved.toml) in your project root to keep reusable optional module sets.
+
+Modules load when either:
+
+- `state = 1` in saved.toml, or
+- you pass `--optional <name>` for a single run.
+
+Common commands:
+
+```bash
+lion saved status
+lion saved enable X11
+lion saved disable GPU
+lion run --optional X11 -- xterm
+```
+
+Use the commented template inside [saved.toml](saved.toml) to add more modules.
+
+### Minimal saved.toml example
+
+```toml
+[[modules]]
+name = "MyData"
+path = "/path/to/data"
+state = 1
+```
+
+This means:
+
+- module name is `MyData`
+- host path `/path/to/data` is mounted when active
+- `state = 1` makes it load automatically on every run
+
+### Advanced saved.toml example
+
+```toml
+[[modules]]
+name = "MyGuiModule"
+env = ["DISPLAY", "XAUTHORITY"]
+state = 0
+
+[[modules.mounts]]
+src = "/tmp/.X11-unix"
+dst = "/tmp/.X11-unix"
+mode = "rw"
+
+[[modules.mounts]]
+src = "${HOME}/.Xauthority"
+dst = "${HOME}/.Xauthority"
+mode = "ro"
+```
+
+This stays disabled by default, but can be used for one run with:
+
+```bash
+lion run --optional MyGuiModule -- xterm
+```
+
+### Recommended module workflow
+
+For reusable local setups:
+
+1. Put modules in [saved.toml](saved.toml)
+2. Keep most of them at `state = 0`
+3. Enable always-needed ones with `lion saved enable <name>`
+4. Use `--optional <name>` for temporary one-off access
+
+Example:
+
+```bash
+lion saved enable Fonts
+lion run --optional X11 --optional GPU -- glxgears
+```
+
+## Common Workflows
+
+### Node.js project
+
+```bash
+lion run --net=allow -- npm install
+lion run -- npm test
+lion run -- node index.js
+```
+
+### Python project
+
+```bash
+lion run --net=allow -- pip install -r requirements.txt
+lion run -- pytest
+lion run -- python3 main.py
+```
+
+### Rust project
+
+```bash
+lion run --net=allow -- cargo build
+lion run -- cargo test
+lion run -- cargo run
+```
+
+### GUI application
+
+```bash
+lion saved status
+lion run --optional X11 --optional GPU -- xterm
+lion run --optional Wayland --optional GPU -- your-gui-app
+```
+
+### Sandbox with project config
+
+If you do not want to repeat CLI flags, keep project defaults in [lion.toml](lion.toml) and reusable modules in [saved.toml](saved.toml).
+
+Typical layout:
+
+- [lion.toml](lion.toml) → persistent bind mounts and project access mode
+- [proxy.toml](proxy.toml) → allowed domains for `--net=allow`
+- [saved.toml](saved.toml) → reusable optional module definitions
+
+## Troubleshooting
+
+### Command cannot access internet
+
+- Use `--net=allow` for filtered internet
+- Use `--net=full` for unrestricted internet
+- Add missing domains to [proxy.toml](proxy.toml)
+
+### GUI app does not open
+
+- Check `lion saved status`
+- Try `--optional X11`
+- If hardware rendering is needed, add `--optional GPU`
+- If the app uses desktop services, add `--optional D-Bus`
+
+### A file is missing inside the sandbox
+
+- Add it with `--ro /path`
+- Or persist it in [lion.toml](lion.toml)
+- Or create a reusable module in [saved.toml](saved.toml)
+
+### A module path uses `${VAR}` but does not resolve
+
+Module paths in [saved.toml](saved.toml) support `${VAR}` expansion from your host environment.
+Examples:
+
+```toml
+src = "${HOME}/.Xauthority"
+src = "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+```
+
+Unset variables expand to an empty string, so verify that the relevant environment variable exists on the host first.
+
 ## Exit Codes
 
 ### L.I.O.N own exit codes
@@ -143,7 +385,7 @@ See the repo's [`lion.toml`](lion.toml) for the full template.
 These are emitted by `lion` itself when sandbox setup fails — the sandboxed command never ran.
 
 | Code | Meaning |
-|---|---|
+| --- | --- |
 | `0` | Success — sandbox ran and command exited cleanly |
 | `1` | Internal lion error (bug or unexpected failure) |
 | `125` | Sandbox setup failed (bwrap couldn't start) |
@@ -155,7 +397,7 @@ These are emitted by `lion` itself when sandbox setup fails — the sandboxed co
 When the program *inside* the sandbox fails, its exit code is forwarded directly. Common ones you'll see:
 
 | Code | Program | Meaning | Fix |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `1` | any | Generic failure | Check program output |
 | `2` | any | Misuse / bad arguments | Check command syntax |
 | `6` | curl | Couldn't resolve host | Add `--net=allow` or `--net=full` |
@@ -178,12 +420,12 @@ Logs are always written to `~/.lion/logs/last-run.log` regardless of exit code.
 
 ## Architecture
 
-```
+```text
 src/
   sandbox_engine/
     builder.rs      — namespace flags, synthetic root, hardening (die-with-parent, clearenv)
     environment.rs  — --clearenv + safe env allowlist
-    mounts.rs       — bind-mount logic (ro/rw/dev/gui)
+    mounts.rs       — bind-mount logic (ro/rw/dev)
     runner.rs       — orchestrates the full execution pipeline
     network.rs      — NetworkMode enum (None / Allow / Full)
     userns.rs       — pre-flight user namespace check
