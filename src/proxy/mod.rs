@@ -15,6 +15,22 @@ pub struct ProxyConfig {
     pub domains: Vec<String>,
 }
 
+/// Built-in default allow-list used when no proxy.toml is found anywhere.
+/// Covers the most common package managers and code hosts.
+const DEFAULT_DOMAINS: &[&str] = &[
+    // npm
+    "registry.npmjs.org", "npmjs.org", "nodejs.org",
+    // pip / PyPI
+    "pypi.org", "files.pythonhosted.org", "bootstrap.pypa.io",
+    // Rust / Cargo
+    "crates.io", "static.crates.io", "index.crates.io",
+    // GitHub
+    "github.com", "api.github.com", "raw.githubusercontent.com",
+    "objects.githubusercontent.com", "codeload.github.com",
+    // General
+    "google.com", "www.google.com",
+];
+
 pub fn load_config(project_dir: &Path) -> ProxyConfig {
     // 1. Project-local proxy.toml (highest priority)
     let local = project_dir.join("proxy.toml");
@@ -30,8 +46,11 @@ pub fn load_config(project_dir: &Path) -> ProxyConfig {
         }
     }
 
-    tracing::info!("No proxy.toml found — all domains blocked. Add ~/.config/lion/proxy.toml to set defaults.");
-    ProxyConfig::default()
+    // 3. Built-in defaults — no proxy.toml needed for common workflows
+    tracing::info!("No proxy.toml found — using built-in default domain list");
+    ProxyConfig {
+        domains: DEFAULT_DOMAINS.iter().map(|s| s.to_string()).collect(),
+    }
 }
 
 fn load_from_path(path: &Path, label: &str) -> ProxyConfig {

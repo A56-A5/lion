@@ -9,15 +9,8 @@ pub mod proxy;
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
 
-/// Predefined exit codes used by L.I.O.N.
-/// ... (rest of mod exit_codes)
-pub mod exit_codes {
-    pub const SUCCESS: i32 = 0;
+mod exit_codes {
     pub const INTERNAL_ERROR: i32 = 1;
-    pub const USAGE_ERROR: i32 = 2;
-    pub const SANDBOX_SETUP_FAILED: i32 = 125;
-    pub const COMMAND_NOT_EXECUTABLE: i32 = 126;
-    pub const COMMAND_NOT_FOUND: i32 = 127;
 }
 
 #[derive(Parser)]
@@ -123,7 +116,7 @@ fn main() {
             net,
             dry_run,
             gui,
-            optional,
+            optional: _,
             debug,
             ro,
             domains,
@@ -138,7 +131,6 @@ fn main() {
                 net.clone(),
                 *dry_run,
                 *gui,
-                optional.clone(),
                 ro.clone(),
                 domains.clone(),
             )
@@ -198,8 +190,6 @@ fn print_diagnostic_box(err: &LionError) {
     eprintln!("| See log for details: ~/.lion/logs/last-run.log           |");
     eprintln!("+----------------------------------------------------------+");
 }
-
-
 
 fn print_failure_reason(err: &LionError, exit_code: Option<i32>) {
     let reason: std::borrow::Cow<str> = match err {

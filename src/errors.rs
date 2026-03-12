@@ -2,7 +2,6 @@
 //!
 //! Defines the structured error types for L.I.O.N using `thiserror`.
 
-use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,9 +17,6 @@ pub enum LionError {
 
     #[error("Command failed inside sandbox\nExit code: {0}")]
     ExecutionError(i32),
-
-    #[error("failed to mount {path}: {source}")]
-    MountError { path: PathBuf, source: std::io::Error },
 
     #[error("namespace setup failed: {0}")]
     NamespaceError(String),

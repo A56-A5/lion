@@ -16,7 +16,6 @@ pub fn run_sandboxed(
     network_mode: crate::sandbox_engine::network::NetworkMode,
     dry_run: bool,
     gui: bool,
-    _optional: Vec<String>,
     ro_paths: Vec<String>,
     allowed_domains: Vec<String>,
 ) -> Result<()> {

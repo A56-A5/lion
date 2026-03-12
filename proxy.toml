@@ -2,8 +2,8 @@
 # L.I.O.N — proxy.toml   (domain allow-list for --net=http mode)
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Only applies when you run:   lion run --net=http -- <command>
-# Ignored for:  --net=none | --net=dns | --net=full
+# Only applies when you run:   lion run --net=allow -- <command>
+# Ignored for:  --net=none | --net=full
 #
 # HOW IT WORKS
 # ────────────
