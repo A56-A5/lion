@@ -14,8 +14,6 @@ pub fn watch(stderr: ChildStderr, ro_paths: Vec<String>) {
             _ => {}
         }
     }
-
-    eprintln!("\x1b[90m[LION] monitor stopped\x1b[0m");
 }
 
 fn print_banner(ro_paths: &[String]) {

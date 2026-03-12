@@ -1,13 +1,16 @@
 use inotify::{EventMask, Inotify, WatchMask};
 use std::collections::HashMap;
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Spawn an inotify watcher on `paths` in the current thread (call from a background thread).
 ///
-/// Reports ALLOWED READ events whenever the sandbox accesses a bind-mounted path.
+/// Watches until `stop` is set to true (sandbox process exited).
 /// Because bwrap bind-mounts host directories, inotify watchers on the host fire
 /// for every access that happens inside the sandbox as well.
-pub fn watch(paths: Vec<String>) {
+pub fn watch(paths: Vec<String>, stop: Arc<AtomicBool>) {
     let mut inotify = match Inotify::init() {
         Ok(i) => i,
         Err(e) => {
@@ -15,6 +18,13 @@ pub fn watch(paths: Vec<String>) {
             return;
         }
     };
+
+    // Set O_NONBLOCK so read_events returns immediately when there are no events
+    unsafe {
+        let fd = inotify.as_raw_fd();
+        let flags = libc::fcntl(fd, libc::F_GETFL, 0);
+        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
 
     // wd -> canonical path mapping so we can print useful names
     let mut wd_map: HashMap<inotify::WatchDescriptor, PathBuf> = HashMap::new();
@@ -59,8 +69,17 @@ pub fn watch(paths: Vec<String>) {
 
     let mut buffer = [0u8; 4096];
     loop {
-        let events = match inotify.read_events_blocking(&mut buffer) {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        let events = match inotify.read_events(&mut buffer) {
             Ok(e) => e,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // No events right now — check stop flag and retry
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                continue;
+            }
             Err(_) => break,
         };
 
