@@ -20,6 +20,20 @@ pub struct ResolvedProfile {
     pub gui_enabled: bool,
 }
 
+impl ResolvedProfile {
+    /// Collects all unique host source paths that should be monitored.
+    pub fn get_monitor_paths(&self) -> Vec<String> {
+        let mut paths = std::collections::HashSet::new();
+        for (src, _) in &self.ro_mounts {
+            paths.insert(src.clone());
+        }
+        for (src, _) in &self.rw_mounts {
+            paths.insert(src.clone());
+        }
+        paths.into_iter().collect()
+    }
+}
+
 pub fn resolve_profile(profile: &Profile) -> Result<ResolvedProfile> {
     let mut resolved = ResolvedProfile::default();
     let modules_cfg: Value = serde_json::from_str(MODULES_JSON)

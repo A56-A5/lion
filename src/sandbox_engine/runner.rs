@@ -62,6 +62,10 @@ pub fn run_sandboxed(
     // 6. Env
     apply_environment(&mut bwrap, &resolved);
 
+    // 7. Monitor Paths
+    let mut monitor_paths = resolved.get_monitor_paths();
+    monitor_paths.push(project_dir.to_string_lossy().to_string());
+
     bwrap.arg("--chdir").arg(&project_dir).arg("--").args(&cmd);
 
     if dry_run {
@@ -75,8 +79,22 @@ pub fn run_sandboxed(
         return Ok(());
     }
 
-    // 6. Execute
-    let status = bwrap.status().map_err(|e| LionError::Internal(e.to_string()))?;
+    // 8. Execute with monitoring
+    use std::process::Stdio;
+    use crate::monitor::MonitorHandle;
+
+    bwrap.stderr(Stdio::piped());
+
+    let mut child = bwrap.spawn().map_err(|e| LionError::Internal(e.to_string()))?;
+
+    let stderr = child.stderr.take().ok_or_else(|| {
+        LionError::Internal("failed to capture stderr for monitoring".to_string())
+    })?;
+
+    // Spawn monitoring threads
+    let _monitor = MonitorHandle::start(stderr, monitor_paths);
+
+    let status = child.wait().map_err(|e| LionError::Internal(e.to_string()))?;
 
     if status.success() {
         debug!("Command completed successfully");
