@@ -4,7 +4,6 @@ pub mod errors;
 pub mod logger;
 pub mod monitor;
 pub mod config;
-pub mod proxy;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
@@ -25,10 +24,27 @@ pub mod exit_codes {
 #[command(name = "lion")]
 #[command(version = "0.1.0")]
 #[command(
-    about = "Lightweight filesystem sandbox for Linux",
-    long_about = "L.I.O.N is a lightweight, per-execution filesystem sandbox for Linux using bubblewrap."
+    about = "L.I.O.N: Lightweight Isolated Orchestration Node",
+    long_about = "L.I.O.N is a per-execution filesystem sandbox for Linux using bubblewrap. \
+                  It builds a synthetic root, wipes the environment, and creates a fresh \
+                  independent namespace cage for every command. Perfect for running \
+                  untrusted code, isolating builds, or analyzing file access patterns."
 )]
 #[command(arg_required_else_help = true)]
+#[command(propagate_version = true)]
+#[command(help_template = "\
+{before-help}{name} {version}
+{author-with-newline}{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+
+EXAMPLES:
+    lion run -- ls -la                  Run 'ls' in isolated environment
+    lion run --net=full -- curl google.com    Internet access enabled
+    lion run --gui -- xclock            GUI support enabled
+    lion run --ro /tmp -- python script.py    Mount host /tmp as read-only
+")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -42,35 +58,43 @@ pub enum Commands {
     /// Run a command inside a bubblewrap sandbox.
     Run {
         /// The executable and arguments to run inside the sandbox.
-        #[arg(last = true, required = true)]
+        /// Use '--' to separate lion flags from the command, e.g. 'lion run -- ls -la'.
+        #[arg(last = true, required = true, value_name = "COMMAND")]
         cmd: Vec<String>,
 
         /// Network permission profile.
+        /// - none: No network access (unshared loopback only)
+        /// - dns:  Allows DNS resolution (shares host net, mounts /etc/resolv.conf)
+        /// - full: Complete internet access (shares host net, mounts SSL certs)
         #[arg(long, value_name = "PROFILE", default_value = "none")]
         net: crate::sandbox_engine::network::NetworkMode,
 
-        /// Print the bwrap command without executing it (for debugging).
+        /// Print the generated bubblewrap command without executing it.
+        /// Useful for inspecting the sandbox construction.
         #[arg(long, default_value_t = false)]
         dry_run: bool,
 
-        /// Enable GUI app support (exposes X11/Wayland/fonts).
+        /// Enable GUI app support.
+        /// Exposes X11/Wayland sockets, fonts, and GPU drivers.
         #[arg(long, default_value_t = false)]
         gui: bool,
 
-        /// Activate optional modules by name (e.g. `--optional audio`).
+        /// Activate optional system modules by name (e.g. `--optional audio`).
         #[arg(long, value_name = "MODULE")]
         optional: Vec<String>,
 
-        /// Enable detailed technical logging in the terminal.
+        /// Enable detailed technical tracing logs in the main terminal.
         #[arg(long, default_value_t = false)]
         debug: bool,
 
-        /// Mount a directory as read-only inside the sandbox (repeatable, e.g. --ro /home/user/docs).
+        /// Mount a host directory as read-only inside the sandbox.
+        /// Can be used multiple times: '--ro /bin --ro /lib/modules'.
         #[arg(long, value_name = "PATH")]
         ro: Vec<String>,
 
-        /// Domains the proxy will allow through (requires --net=http or --net=full).
-        /// Use '*' to allow all. Repeatable: --domain google.com --domain api.github.com
+        /// Allow these domains through the network proxy (if active).
+        /// Multiple domains can be specified: '--domain google.com --domain github.com'.
+        /// Use '--domain *' to allow all (not recommended for strict sandboxing).
         #[arg(long = "domain", value_name = "DOMAIN")]
         domains: Vec<String>,
     },
