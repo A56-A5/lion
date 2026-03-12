@@ -101,17 +101,20 @@ The widest expansion of the sandbox surface — required for graphical applicati
 
 ## 6. Live Access Monitor
 
-L.I.O.N runs two background monitor threads for every sandbox execution:
+L.I.O.N runs specialized background monitor logic:
+
+**TUI Separation**:
+- Launches a separate terminal (`gnome-terminal` or `kitty`) for events.
+- Communications happen via a temporary FIFO in `/tmp/lion-monitor-<pid>`.
+- Gracefully falls back to inline monitoring if no separate terminal is available.
 
 **inotify watcher** (allowed access tracking):
-- Watches all bind-mounted paths for `ACCESS`, `OPEN`, `MODIFY`, `CREATE`, `DELETE` events
-- Reports every file the sandboxed process actually touches in real time
-- Stops within 50ms of sandbox exit via a shared stop flag — no hanging threads
+- Watches all bind-mounted paths for `ACCESS`, `OPEN`, `MODIFY`, `CREATE`, `DELETE`.
+- Reports every file the sandboxed process actually touches.
 
 **stderr parser** (blocked access tracking):
-- Reads bwrap's stderr pipe line by line
-- Parses `Permission denied`, `Operation not permitted`, and `No such file or directory` on sensitive paths
-- Reports every access attempt the sandbox *denied*
+- Reads bwrap's stderr pipe.
+- Reports attempts that the sandbox denied (e.g., `Permission denied` on `/etc/shadow`).
 
 Both streams are printed live with timestamps, ANSI color, and event type tags.
 
