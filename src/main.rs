@@ -2,12 +2,12 @@
 //!
 //! This is the entry point for the L.I.O.N CLI.
 //! It defines the command-line interface using `clap` and routes execution
-//! to the sandbox runner (`sandbox.rs`).
+//! to the sandbox runner (`sandbox_engine`).
 
 use clap::{Parser, Subcommand};
 
 pub mod install;
-pub mod sandbox;
+pub mod sandbox_engine;
 
 /// Predefined exit codes used by L.I.O.N.
 ///
@@ -81,7 +81,7 @@ fn main() {
             dry_run,
             gui,
             optional,
-        } => sandbox::run_sandboxed(cmd, network, dry_run, gui, optional),
+        } => sandbox_engine::run_sandboxed(cmd, network, dry_run, gui, optional),
     };
 
     // Handle any errors that bubbled up during execution

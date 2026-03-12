@@ -1,7 +1,3 @@
-//! `sandbox_engine/env.rs`
-//!
-//! Applies strictly isolated runtime shell variables into the `bwrap` execution.
-
 use std::process::Command;
 
 /// Passes strictly safe environment variables into the sandbox.
