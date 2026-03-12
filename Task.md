@@ -87,7 +87,7 @@ TUI (src/tui/)
 
 ---
 
-## TASK 1 — Harden the sandbox core
+## TASK 1 — Harden the sandbox core [DONE]
 
 **Priority**: 🔴 CORE | **Time**: 20 min
 
@@ -104,7 +104,7 @@ These go into the existing `bwrap.args([...])` call in `builder.rs`. Order matte
 
 ---
 
-## TASK 2 — Single profile with live exposure control
+## TASK 2 — Single profile with live exposure control [DONE]
 
 **Priority**: 🔴 CORE | **Time**: 1.5 hours
 
@@ -171,7 +171,7 @@ Reject with a clear error message if any check fails.
 
 ---
 
-## TASK 3 — Module resolver
+## TASK 3 — Module resolver [DONE]
 
 **Priority**: 🔴 CORE | **Time**: 1.5 hours
 

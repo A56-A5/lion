@@ -4,18 +4,15 @@ use std::path::PathBuf;
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
+use crate::profile::{store, resolver};
 use crate::sandbox_engine::builder::build_bwrap;
 use crate::sandbox_engine::environment::apply_environment;
-use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
 
 /// Central entry point — builds and runs the sandboxed process.
 pub fn run_sandboxed(
     cmd: Vec<String>,
-    network_mode: crate::sandbox_engine::network::NetworkMode,
     dry_run: bool,
-    gui: bool,
-    _optional: Vec<String>,
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -33,6 +30,10 @@ pub fn run_sandboxed(
         check_userns_available().map_err(|e| LionError::NamespaceError(e.to_string()))?;
     }
 
+    // 3. Load and Resolve Profile
+    let profile = store::load_profile().map_err(|e| LionError::Internal(e.to_string()))?;
+    let resolved = resolver::resolve_profile(&profile).map_err(|e| LionError::Internal(e.to_string()))?;
+
     info!("Running inside sandbox...");
 
     let project_dir: PathBuf = env::current_dir().map_err(|e| LionError::EnvironmentError(e.to_string()))?;
@@ -47,19 +48,19 @@ pub fn run_sandboxed(
         info!("Project dir: {}", project_dir.display());
     }
 
-    // 3. Build bwrap command
-    let mut bwrap = build_bwrap(project_path, network_mode, dry_run);
+    // 4. Build bwrap command
+    let mut bwrap = build_bwrap(project_path, &resolved, dry_run);
 
-    // 4. Mounts
-    apply_system_mounts(&mut bwrap, gui);
+    // 5. Mounts
+    crate::sandbox_engine::mounts::apply_profile_mounts(&mut bwrap, &resolved);
 
     if has_src {
         let src_path = src_dir.to_str().unwrap();
         bwrap.arg("--ro-bind").arg(src_path).arg(src_path);
     }
 
-    // 5. Env
-    apply_environment(&mut bwrap, gui);
+    // 6. Env
+    apply_environment(&mut bwrap, &resolved);
 
     bwrap.arg("--chdir").arg(&project_dir).arg("--").args(&cmd);
 

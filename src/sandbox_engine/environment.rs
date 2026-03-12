@@ -5,11 +5,10 @@
 
 use std::process::Command;
 
+use crate::profile::resolver::ResolvedProfile;
+
 /// Passes strictly safe environment variables into the sandbox.
-///
-/// This prevents "environment leakage" where host secrets or aliases
-/// might affect the sandboxed application's behavior.
-pub fn apply_environment(bwrap: &mut Command, gui: bool) {
+pub fn apply_environment(bwrap: &mut Command, resolved: &ResolvedProfile) {
     // 1. Clear the environment inside the sandbox
     bwrap.arg("--clearenv");
 
@@ -20,17 +19,8 @@ pub fn apply_environment(bwrap: &mut Command, gui: bool) {
     bwrap.args(["--setenv", "LOGNAME", "lion"]);
     bwrap.args(["--setenv", "LANG", "C.UTF-8"]);
 
-    // If GUI is allowed, pass display servers to allow windowing.
-    // Note: These are now only added AFTER env-clear.
-    if gui {
-        if let Ok(display) = std::env::var("DISPLAY") {
-            bwrap.arg("--setenv").arg("DISPLAY").arg(&display);
-        }
-        if let Ok(wayland_display) = std::env::var("WAYLAND_DISPLAY") {
-            bwrap
-                .arg("--setenv")
-                .arg("WAYLAND_DISPLAY")
-                .arg(&wayland_display);
-        }
+    // 3. Apply resolved environment variables from modules
+    for (key, val) in &resolved.env_vars {
+        bwrap.arg("--setenv").arg(key).arg(val);
     }
 }

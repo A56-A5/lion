@@ -16,6 +16,8 @@ pub struct ResolvedProfile {
     pub rw_mounts: Vec<(String, String)>,
     pub dev_mounts: Vec<(String, String)>,
     pub env_vars: HashMap<String, String>,
+    pub network_enabled: bool,
+    pub gui_enabled: bool,
 }
 
 pub fn resolve_profile(profile: &Profile) -> Result<ResolvedProfile> {
@@ -33,6 +35,14 @@ pub fn resolve_profile(profile: &Profile) -> Result<ResolvedProfile> {
     for module_name in &active_modules {
         if let Some(cfg) = modules_obj.get(module_name) {
             apply_module_config(cfg, &mut resolved)?;
+            
+            // Set capability flags
+            if module_name == "network" {
+                resolved.network_enabled = true;
+            }
+            if module_name == "wayland" || module_name == "x11" {
+                resolved.gui_enabled = true;
+            }
         }
     }
 

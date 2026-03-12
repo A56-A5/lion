@@ -101,21 +101,9 @@ pub enum Commands {
         #[arg(last = true, required = true)]
         cmd: Vec<String>,
 
-        /// Network permission profile.
-        #[arg(long, value_name = "PROFILE", default_value = "none")]
-        net: crate::sandbox_engine::network::NetworkMode,
-
         /// Print the bwrap command without executing it (for debugging).
         #[arg(long, default_value_t = false)]
         dry_run: bool,
-
-        /// Enable GUI app support (exposes X11/Wayland/fonts).
-        #[arg(long, default_value_t = false)]
-        gui: bool,
-
-        /// Activate optional modules by name (e.g. `--optional audio`).
-        #[arg(long, value_name = "MODULE")]
-        optional: Vec<String>,
 
         /// Enable detailed technical logging in the terminal.
         #[arg(long, default_value_t = false)]
@@ -188,10 +176,7 @@ fn main() {
         }
         Commands::Run {
             cmd,
-            net,
             dry_run,
-            gui,
-            optional,
             debug,
         } => {
             // Initialize logging before starting the engine.
@@ -201,10 +186,7 @@ fn main() {
             }
             sandbox_engine::run_sandboxed(
                 cmd.clone(),
-                net.clone(),
                 *dry_run,
-                *gui,
-                optional.clone(),
             )
             .map_err(Into::into)
         }

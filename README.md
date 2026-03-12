@@ -6,11 +6,11 @@ A lightweight, per-execution filesystem sandbox for Linux using Bubblewrap (`bwr
 
 L.I.O.N currently operates as a static, pre-hardcoded sandbox engine. It protects your development environment by isolating processes from the rest of your system.
 
-- **Maximum Sandboxing**: Creates an entirely new Linux namespace where your command runs. It isolates user IDs, inter-process communication, Process Trees (PIDs), hostnames, and cgroups. 
+- **Maximum Sandboxing**: Creates an entirely new Linux namespace where your command runs. It isolates user IDs, inter-process communication, Process Trees (PIDs), hostnames ("lion"), and cgroups. 
 - **Hardcoded System Mounts**: Exposes only basic standard paths read-only to guarantee executables work (`/usr`, `/bin`, `/lib`, `/lib64`, `/etc/alternatives`, `/snap`).
 - **Source Protection**: Re-mounts your current working directory as read-write, but strictly restricts the `src/` folder to be read-only so tests cannot maliciously overwrite your code.
-- **Environment Isolation**: Passes only safe environment variables (`HOME`, `USER`, `PATH`, `LANG`, and basic `XDG_*` vars).
-- **Selective Capabilities**: You can opt-in to expose network interfaces (`--network`) or GUI rendering sockets (`--gui`).
+- **Environment Isolation**: Strictly clears the host environment (`--clearenv`) and passes only safe variables (`HOME`, `USER`, `PATH`, `LANG`, and basic `XDG_*` vars).
+- **Live Exposure Control**: Manage what is allowed into your sandbox using `lion expose` and `lion unexpose`.
 
 For a detailed breakdown of EXACTLY what this sandbox exposes to applications, see [EXPOSURES.md](file:///home/vishnunandan555/Projects/lion/EXPOSURES.md).
 
@@ -24,26 +24,21 @@ Additionally, modern Linux distributions (like Ubuntu 24+) restrict unprivileged
 sudo lion install
 ```
 
-## Usage Guide
-
 Execute any command safely isolated from your home directory:
 
 ```bash
 # Basic sandboxed execution (No Network, No GUI)
 lion run -- node script.js
-lion run -- cargo build
 
-# Allow internet access (e.g., for downloading packages or resolving DNS)
-lion run --network -- curl https://example.com
+# Allow internet access via shorthand
+lion run --net=full -- curl https://example.com
 
-# Allow GUI rendering (Exposes X11/Wayland sockets and fonts)
-lion run --gui -- firefox
-
-# Debug Run: See what bwrap command will be executed without actually running it
-lion run --dry-run -- ls -la
-
-# The --optional flag exists but does nothing in the current build
-lion run --optional audio -- ls
+# Manage permanent exposure profile
+lion expose --network               # Enable network for all future runs
+lion expose --gpu                   # Enable GPU hardware
+lion expose ~/Documents             # Expose a custom writable path
+lion status                         # Check current profile
+lion unexpose --network             # Remove network access
 ```
 
 ## Shortcomings & Limitations
