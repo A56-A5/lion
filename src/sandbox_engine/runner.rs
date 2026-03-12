@@ -109,7 +109,13 @@ pub fn run_sandboxed(
     // 6. Execute
     bwrap.stderr(Stdio::piped());
     let mut child = bwrap.spawn().map_err(|e| LionError::Internal(e.to_string()))?;
-    let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, ro_paths.clone()));
+
+    // Build watch list: project dir + any explicit --ro paths
+    let mut watch_paths = vec![project_path.to_string()];
+    watch_paths.extend(ro_paths.clone());
+    watch_paths.dedup();
+
+    let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, watch_paths));
     let status = child.wait().map_err(|e| LionError::Internal(e.to_string()))?;
 
     if status.success() {
