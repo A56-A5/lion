@@ -4,7 +4,7 @@
 //! Modules can be added, removed, enabled, disabled, and listed via `lion saved`.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 use anyhow::{Context, Result};
 
@@ -139,14 +139,31 @@ pub struct OptionalModulesConfig {
 
 impl OptionalModulesConfig {
     pub fn load(project_dir: &Path) -> Result<Self> {
-        let path = project_dir.join("saved.toml");
+        let local_path = project_dir.join("saved.toml");
+        
+        // Target path: prefer local lion.toml, fallback to ~/.lion/saved.toml
+        let path = if local_path.exists() {
+            local_path
+        } else {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".lion/saved.toml")
+        };
+
         if !path.exists() {
             return Ok(Self::default());
         }
+
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", path.display()))?;
+        
+        if path.to_string_lossy().contains(".lion/saved.toml") {
+            tracing::info!("Loaded global modules from ~/.lion/saved.toml");
+        } else {
+            tracing::info!("Loaded local modules from {}", path.display());
+        }
+
         Ok(config)
     }
 

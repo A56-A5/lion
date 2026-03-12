@@ -10,6 +10,39 @@ use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
 use crate::proxy::ProxyHandle;
 
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+fn get_direct_child(ppid: u32) -> Option<u32> {
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                if let Ok(pid) = name.parse::<u32>() {
+                    let stat_path = format!("/proc/{pid}/stat");
+                    if let Ok(stat) = std::fs::read_to_string(stat_path) {
+                        if let Some(last_rparen) = stat.rfind(')') {
+                            let after_comm = &stat[last_rparen + 1..];
+                            let fields: Vec<&str> = after_comm.split_whitespace().collect();
+                            if fields.len() > 1 {
+                                if let Ok(p) = fields[1].parse::<u32>() {
+                                    if p == ppid {
+                                        return Some(pid);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Central entry point — builds and runs the sandboxed process.
 pub fn run_sandboxed(
     cmd: Vec<String>,
@@ -18,6 +51,7 @@ pub fn run_sandboxed(
     ro_paths: Vec<String>,
     allowed_domains: Vec<String>,
     optional_names: Vec<String>,
+    use_tui: bool,
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -101,12 +135,14 @@ pub fn run_sandboxed(
     // This allows mixing saved configuration with per-run overrides.
     let opt_cfg = crate::optional_modules::OptionalModulesConfig::load(&project_dir)
         .map_err(|e| LionError::Internal(e.to_string()))?;
+    let mut active_modules: Vec<String> = Vec::new();
     
     for m in opt_cfg.modules {
         let is_requested = optional_names.contains(&m.name);
         let is_enabled = m.state == 1;
         
         if is_enabled || is_requested {
+            active_modules.push(m.name.clone());
             let activation_reason = if is_enabled && is_requested {
                 "saved + CLI"
             } else if is_enabled {
@@ -221,14 +257,104 @@ pub fn run_sandboxed(
     watch_paths.extend(ro_paths.clone());
     watch_paths.dedup();
 
-    let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, watch_paths));
+    if use_tui {
+        // ── TUI Mode ────────────────────────────────────────────────────────────
+        let (tui_handle, tui_join) = crate::tui::TuiHandle::spawn();
 
-    // Perf monitor: CPU/RAM graph in a separate terminal window
-    let cmd_label = cmd.first().cloned().unwrap_or_else(|| "sandbox".to_string());
-    let _perf = crate::monitor::perf::PerfHandle::spawn(child.id(), &cmd_label);
+        let mut exposed_paths: Vec<String> = Vec::new();
+        exposed_paths.push(format!("{} ({})", project_path, if project_ro { "ro" } else { "rw" }));
+        for entry in &lion_cfg.mount {
+            let resolved = entry.resolved_path();
+            let access = if entry.is_readonly() { "ro" } else { "rw" };
+            exposed_paths.push(format!("{} ({})", resolved, access));
+        }
+        for path in &ro_paths {
+            exposed_paths.push(format!("{} (ro)", path));
+        }
+        exposed_paths.sort();
+        exposed_paths.dedup();
 
-    let status = child.wait().map_err(|e| LionError::Internal(e.to_string()))?;
+        active_modules.sort();
+        active_modules.dedup();
 
+        tui_handle.send_info(crate::tui::SandboxInfo {
+            command:      cmd.clone(),
+            network_mode: format!("{network_mode:?}").to_lowercase(),
+            pid:          bwrap_pid,
+            started_at:   Some(chrono::Local::now()),
+            project_access: if project_ro { "ro".to_string() } else { "rw".to_string() },
+            exposed_paths,
+            active_modules,
+        });
+        tui_handle.log(crate::tui::SandboxEvent::info(format!("[LION] sandbox started — bwrap PID {bwrap_pid}")));
+
+        // Monitors
+        let _monitor = child.stderr.take().map(|s| {
+            crate::monitor::MonitorHandle::start_with_tui(s, watch_paths, tui_handle.clone())
+        });
+
+        // Find leader PID
+        let mut leader_pid = None;
+        for _ in 0..20 {
+            if let Some(p) = get_direct_child(bwrap_pid) {
+                leader_pid = Some(p);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let leader_pid = leader_pid.unwrap_or(bwrap_pid);
+        let _perf = crate::tui::PerfCollectorHandle::spawn(leader_pid, tui_handle.clone());
+
+        info!("Waiting for sandbox leader (PID {})...", leader_pid);
+        
+        let status = loop {
+            if let Ok(Some(s)) = child.try_wait() { break s; }
+            if !std::path::Path::new(&format!("/proc/{}", leader_pid)).exists() {
+                info!("Leader process {} exited, terminating sandbox...", leader_pid);
+                let _ = child.kill();
+                break child.wait().unwrap_or_else(|_| std::process::Command::new("true").status().unwrap());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        };
+
+        tui_handle.log(crate::tui::SandboxEvent::info(format!("[LION] sandbox exited — status {}", status.code().unwrap_or(-1))));
+        tui_handle.shutdown(tui_join);
+        finalize_execution(status, cmd)
+    } else {
+        // ── Standard CLI Mode (Multi-terminal) ──────────────────────────────────
+        let _monitor = child.stderr.take().map(|s| crate::monitor::MonitorHandle::start(s, watch_paths));
+
+        // Find leader PID
+        let mut leader_pid = None;
+        for _ in 0..20 {
+            if let Some(p) = get_direct_child(bwrap_pid) {
+                leader_pid = Some(p);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let leader_pid = leader_pid.unwrap_or(bwrap_pid);
+        
+        let cmd_label = cmd.first().cloned().unwrap_or_else(|| "sandbox".to_string());
+        let _perf = crate::monitor::perf::PerfHandle::spawn(leader_pid, &cmd_label);
+
+        info!("Waiting for sandbox leader (PID {})...", leader_pid);
+        
+        let status = loop {
+            if let Ok(Some(s)) = child.try_wait() { break s; }
+            if !std::path::Path::new(&format!("/proc/{}", leader_pid)).exists() {
+                info!("Leader process {} exited, terminating sandbox...", leader_pid);
+                let _ = child.kill();
+                break child.wait().unwrap_or_else(|_| std::process::Command::new("true").status().unwrap());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        };
+
+        finalize_execution(status, cmd)
+    }
+}
+
+fn finalize_execution(status: std::process::ExitStatus, cmd: Vec<String>) -> Result<()> {
     if status.success() {
         debug!("Command completed successfully");
         Ok(())
@@ -236,15 +362,10 @@ pub fn run_sandboxed(
         let code = status.code().unwrap_or(1);
         let program_name = cmd.first().cloned().unwrap_or_else(|| "unknown".to_string());
         
-        // On some systems bwrap returns 1 for execvp failures.
-        // We do a manual check to provide better diagnostics if code is 1, 126, or 127.
         if code == 1 || code == 126 || code == 127 {
             if let Some(path) = find_binary(&program_name) {
-                // If it exists but is not executable, it's PermissionDenied
                 if is_executable(&path) {
-                    if code == 1 {
-                        return Err(LionError::ExecutionError(code));
-                    }
+                    if code == 1 { return Err(LionError::ExecutionError(code)); }
                 } else {
                     return Err(LionError::PermissionDenied(program_name));
                 }
@@ -262,13 +383,6 @@ pub fn run_sandboxed(
             }
         }
     }
-}
-
-fn is_executable(path: &std::path::Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .map(|m| m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
 }
 
 fn find_binary(name: &str) -> Option<PathBuf> {

@@ -4,6 +4,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Spawn an inotify watcher on `paths` in the current thread (call from a background thread).
 ///
@@ -11,50 +12,13 @@ use std::sync::Arc;
 /// Because bwrap bind-mounts host directories, inotify watchers on the host fire
 /// for every access that happens inside the sandbox as well.
 pub fn watch(paths: Vec<String>, stop: Arc<AtomicBool>) {
-    let mut inotify = match Inotify::init() {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("\x1b[90m[LION] inotify init failed: {}\x1b[0m", e);
+    let (mut inotify, wd_map) = match init_watcher(&paths) {
+        Ok(v) => v,
+        Err(msg) => {
+            eprintln!("\x1b[90m[LION] {}\x1b[0m", msg);
             return;
         }
     };
-
-    // Set O_NONBLOCK so read_events returns immediately when there are no events
-    unsafe {
-        let fd = inotify.as_raw_fd();
-        let flags = libc::fcntl(fd, libc::F_GETFL, 0);
-        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    }
-
-    // wd -> canonical path mapping so we can print useful names
-    let mut wd_map: HashMap<inotify::WatchDescriptor, PathBuf> = HashMap::new();
-
-    let mask = WatchMask::ACCESS
-        | WatchMask::OPEN
-        | WatchMask::CLOSE_NOWRITE
-        | WatchMask::MODIFY
-        | WatchMask::CREATE
-        | WatchMask::DELETE;
-
-    for raw in &paths {
-        let p = Path::new(raw);
-        if !p.exists() {
-            continue;
-        }
-        // Watch the path itself
-        add_watch(&mut inotify, &mut wd_map, p, mask);
-
-        // One level of subdirectory recursion — enough for project dirs
-        if p.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(p) {
-                for entry in entries.flatten() {
-                    if entry.path().is_dir() {
-                        add_watch(&mut inotify, &mut wd_map, &entry.path(), mask);
-                    }
-                }
-            }
-        }
-    }
 
     if wd_map.is_empty() {
         eprintln!("\x1b[90m[LION] inotify: no valid paths to watch\x1b[0m");
@@ -144,4 +108,80 @@ fn classify_event(mask: EventMask) -> (&'static str, &'static str) {
     } else {
         ("EVENT  ", "\x1b[90m")
     }
+}
+
+pub fn watch_with_tui(paths: Vec<String>, stop: Arc<AtomicBool>, tui: crate::tui::TuiHandle) {
+    let (mut inotify, wd_map) = match init_watcher(&paths) {
+        Ok(v) => v,
+        Err(msg) => {
+            tui.log(crate::tui::SandboxEvent::info(format!("inotify unavailable: {msg}")));
+            return;
+        }
+    };
+
+    tui.log(crate::tui::SandboxEvent::info(format!("inotify watching {} path(s)", wd_map.len())));
+
+    let mut buffer = [0; 4096];
+    while !stop.load(Ordering::Relaxed) {
+        match inotify.read_events(&mut buffer) {
+            Ok(events) => {
+                for event in events {
+                    if event.mask.contains(EventMask::ISDIR) && event.mask.contains(EventMask::OPEN) {
+                        continue;
+                    }
+                    if let Some(parent) = wd_map.get(&event.wd) {
+                        let full_path = if let Some(name) = event.name {
+                            parent.join(name)
+                        } else {
+                            parent.clone()
+                        };
+                        let path_str = full_path.to_string_lossy().to_string();
+                        tui.log(crate::tui::inotify_event(event.mask, path_str));
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+fn init_watcher(paths: &[String]) -> std::result::Result<(Inotify, HashMap<inotify::WatchDescriptor, PathBuf>), String> {
+    let mut inotify = Inotify::init().map_err(|e| format!("inotify init failed: {e}"))?;
+
+    unsafe {
+        let fd = inotify.as_raw_fd();
+        let flags = libc::fcntl(fd, libc::F_GETFL, 0);
+        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
+
+    let mut wd_map: HashMap<inotify::WatchDescriptor, PathBuf> = HashMap::new();
+    let mask = WatchMask::ACCESS
+        | WatchMask::OPEN
+        | WatchMask::CLOSE_NOWRITE
+        | WatchMask::MODIFY
+        | WatchMask::CREATE
+        | WatchMask::DELETE;
+
+    for raw in paths {
+        let p = Path::new(raw);
+        if !p.exists() {
+            continue;
+        }
+
+        add_watch(&mut inotify, &mut wd_map, p, mask);
+        if p.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        add_watch(&mut inotify, &mut wd_map, &entry.path(), mask);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((inotify, wd_map))
 }

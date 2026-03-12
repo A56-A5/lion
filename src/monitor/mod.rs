@@ -81,6 +81,48 @@ impl MonitorHandle {
             terminal_child,
         }
     }
+
+    /// Start both the stderr reader and inotify watcher, routing all events
+    /// into the TUI instead of spawning separate terminal windows.
+    pub fn start_with_tui(stderr: ChildStderr, watch_paths: Vec<String>, tui: crate::tui::TuiHandle) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+
+        // ── stderr → TUI ─────────────────────────────────────────────────────
+        let stop_flag  = Arc::clone(&stop);
+        let tui_stderr = tui.clone();
+        let stderr_thread = thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut line = String::new();
+            while !stop_flag.load(Ordering::Relaxed) {
+                line.clear();
+                if let Ok(n) = reader.read_line(&mut line) {
+                    if n == 0 { break; }
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        tui_stderr.log(crate::tui::parse_monitor_line(trimmed));
+                    }
+                } else {
+                    break;
+                }
+            }
+            stop_flag.store(true, Ordering::Relaxed);
+        });
+
+        // ── inotify → TUI ─────────────────────────────────────────────────────
+        let sf           = Arc::clone(&stop);
+        let tui_inotify  = tui;
+        let wp           = watch_paths;
+        let inotify_thread = Some(thread::spawn(move || {
+            self::inotify::watch_with_tui(wp, sf, tui_inotify);
+        }));
+
+        MonitorHandle {
+            stop,
+            stderr_thread: Some(stderr_thread),
+            inotify_thread,
+            terminal_child: None,
+        }
+    }
 }
 
 pub fn run_monitor_subcommand(fifo_path: String, watch_paths: Vec<String>) -> anyhow::Result<()> {

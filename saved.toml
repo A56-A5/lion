@@ -124,3 +124,8 @@ mode = "rw"
 src = "${XDG_RUNTIME_DIR}/at-spi/bus"
 dst = "${XDG_RUNTIME_DIR}/at-spi/bus"
 mode = "rw"
+
+[[modules.mounts]]
+src = "${XDG_RUNTIME_DIR}/dconf"
+dst = "${XDG_RUNTIME_DIR}/dconf"
+mode = "rw"

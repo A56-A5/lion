@@ -105,6 +105,9 @@ lion run --dry-run -- ls -la
 
 # Debug — enable verbose internal tracing logs
 lion run --debug -- node index.js
+
+# Run in single-terminal TUI mode (no extra monitor/perf terminals)
+lion run --tui -- npm test
 ```
 
 ## First Real Examples
@@ -183,6 +186,17 @@ To customise, drop a `proxy.toml` in your project root. See the repo's [`proxy.t
 | `PIP_PROXY` | pip |
 
 ## TUI Separation
+
+Use `--tui` to render monitoring directly inside the current terminal:
+
+```bash
+lion run --tui -- cargo test
+lion run --tui --net=allow -- npm install
+```
+
+In `--tui` mode, the current terminal becomes a Ratatui dashboard and no additional monitor/perf terminal windows are opened.
+
+Without `--tui`, the existing multi-terminal behavior remains unchanged.
 
 When a sandbox starts, L.I.O.N automatically opens two extra terminal windows:
 
@@ -444,7 +458,6 @@ src/
 
 ## Roadmap
 
-- **Live TUI** — ratatui dashboard showing exposure panel, scrolling access log, CPU/memory gauges, and one-key sandbox kill.
 - **Seccomp filter** — syscall allowlist for an additional layer of confinement.
 - **Resource limits** — cgroup-based CPU and RAM caps via `--max-cpu` / `--max-mem`.
 - **Profile system** — `lion expose / unexpose` to manage a persistent `~/.config/lion/profile.toml`.

@@ -6,6 +6,7 @@ pub mod monitor;
 pub mod config;
 pub mod proxy;
 pub mod optional_modules;
+pub mod tui;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
@@ -94,6 +95,14 @@ pub enum Commands {
         /// Use '--domain *' to allow all (not recommended for strict sandboxing).
         #[arg(long = "domain", value_name = "DOMAIN", value_delimiter = ',')]
         domains: Vec<String>,
+
+        /// Enable GUI support (shorthand for adding X11/desktop modules).
+        #[arg(long, default_value_t = false)]
+        gui: bool,
+
+        /// Enable the Ratatui-based TUI for monitoring.
+        #[arg(long, default_value_t = false)]
+        tui: bool,
     },
 
     /// INTERNAL: Listen for events on a FIFO and print them.
@@ -160,19 +169,32 @@ fn main() {
             debug,
             ro,
             domains,
+            gui,
+            tui,
         } => {
             // Initialize logging before starting the engine.
             if let Err(e) = logger::init_logging(*debug) {
                 eprintln!("critical error: failed to initialize logger: {e}");
                 std::process::exit(exit_codes::INTERNAL_ERROR);
             }
+
+            let mut final_optional = optional.clone();
+            if *gui {
+                for m in ["X11", "Wayland", "GPU", "Fonts", "D-Bus"] {
+                    if !final_optional.contains(&m.to_string()) {
+                        final_optional.push(m.to_string());
+                    }
+                }
+            }
+
             sandbox_engine::run_sandboxed(
                 cmd.clone(),
                 net.clone(),
                 *dry_run,
                 ro.clone(),
                 domains.clone(),
-                optional.clone(),
+                final_optional,
+                *tui,
             )
             .map_err(Into::into)
         }
