@@ -27,6 +27,7 @@ pub fn apply_environment(bwrap: &mut Command, gui: bool) {
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_CACHE_HOME",
+        "XAUTHORITY",
     ] {
         if let Ok(val) = std::env::var(var) {
             bwrap.arg("--setenv").arg(var).arg(val);
