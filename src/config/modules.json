@@ -1,0 +1,57 @@
+{
+  "base": {
+    "mandatory": true,
+    "mounts": [
+      { "type": "ro-bind", "src": "/usr", "dst": "/usr" },
+      { "type": "ro-bind", "src": "/bin", "dst": "/bin" },
+      { "type": "ro-bind", "src": "/lib", "dst": "/lib" },
+      { "type": "ro-bind", "src": "/lib64", "dst": "/lib64" },
+      { "type": "ro-bind", "src": "/etc/alternatives", "dst": "/etc/alternatives" }
+    ],
+    "env": ["PATH", "TERM", "LANG"]
+  },
+  "gpu": {
+    "mandatory": false,
+    "mounts": [
+      { "type": "dev-bind", "src": "/dev/dri", "dst": "/dev/dri" },
+      { "type": "dev-bind", "src": "/dev/nvidia0", "dst": "/dev/nvidia0" },
+      { "type": "dev-bind", "src": "/dev/nvidiactl", "dst": "/dev/nvidiactl" },
+      { "type": "dev-bind", "src": "/dev/nvidia-modeset", "dst": "/dev/nvidia-modeset" }
+    ],
+    "env": ["LD_LIBRARY_PATH", "LIBGL_ALWAYS_SOFTWARE"]
+  },
+  "wayland": {
+    "mandatory": false,
+    "runtime_sockets": ["wayland-0"],
+    "env": ["WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"]
+  },
+  "x11": {
+    "mandatory": false,
+    "mounts": [
+      { "type": "bind", "src": "/tmp/.X11-unix", "dst": "/tmp/.X11-unix" }
+    ],
+    "env": ["DISPLAY", "XAUTHORITY"]
+  },
+  "audio": {
+    "mandatory": false,
+    "runtime_sockets": ["pulse/native", "pipewire-0"],
+    "env": ["PULSE_SERVER"]
+  },
+  "network": {
+    "mandatory": false,
+    "mounts": [
+      { "type": "ro-bind", "src": "/etc/resolv.conf", "dst": "/etc/resolv.conf" },
+      { "type": "ro-bind", "src": "/etc/ssl", "dst": "/etc/ssl" },
+      { "type": "ro-bind", "src": "/etc/pki", "dst": "/etc/pki" }
+    ],
+    "env": ["http_proxy", "https_proxy", "no_proxy"]
+  },
+  "fonts": {
+    "mandatory": false,
+    "mounts": [
+      { "type": "ro-bind", "src": "/usr/share/fonts", "dst": "/usr/share/fonts" },
+      { "type": "ro-bind", "src": "/usr/local/share/fonts", "dst": "/usr/local/share/fonts" },
+      { "type": "ro-bind", "src": "~/.local/share/fonts", "dst": "~/.local/share/fonts" }
+    ]
+  }
+}

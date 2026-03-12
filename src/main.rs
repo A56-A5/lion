@@ -2,12 +2,14 @@ pub mod install;
 pub mod sandbox_engine;
 pub mod errors;
 pub mod logger;
+pub mod config;
+pub mod profile;
+pub mod commands;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
 
-/// Predefined exit codes used by L.I.O.N.
-/// ... (rest of mod exit_codes)
+// ... (exit_codes)
 pub mod exit_codes {
     pub const SUCCESS: i32 = 0;
     pub const INTERNAL_ERROR: i32 = 1;
@@ -18,7 +20,6 @@ pub mod exit_codes {
 }
 
 #[derive(Parser)]
-// ... Cli struct
 #[command(name = "lion")]
 #[command(version = "0.1.0")]
 #[command(
@@ -35,6 +36,33 @@ pub struct Cli {
 pub enum Commands {
     /// Perform one-time system setup (requires sudo).
     Install,
+
+    /// Add a writable path, enable a module, or allow a domain.
+    Expose {
+        /// Host path to expose read-write.
+        path: Option<String>,
+        /// Module to enable (e.g. gpu, network).
+        #[arg(long)]
+        module: Option<String>,
+        /// Domain to allow (e.g. google.com).
+        #[arg(long)]
+        domain: Option<String>,
+    },
+
+    /// Remove a writable path, disable a module, or restrict a domain.
+    Unexpose {
+        /// Host path to remove.
+        path: Option<String>,
+        /// Module to disable.
+        #[arg(long)]
+        module: Option<String>,
+        /// Domain to restrict.
+        #[arg(long)]
+        domain: Option<String>,
+    },
+
+    /// Show current exposure profile.
+    Status,
 
     /// Run a command inside a bubblewrap sandbox.
     Run {
@@ -70,6 +98,23 @@ fn main() {
     // Route the command to the appropriate handler
     let result: anyhow::Result<()> = match &cli.command {
         Commands::Install => install::run_install().map_err(Into::into),
+        Commands::Expose { path, module, domain } => {
+            if let Err(e) = logger::init_logging(false) {
+                eprintln!("critical error: failed to initialize logger: {e}");
+                std::process::exit(exit_codes::INTERNAL_ERROR);
+            }
+            commands::expose::handle_expose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
+        }
+        Commands::Unexpose { path, module, domain } => {
+            if let Err(e) = logger::init_logging(false) {
+                eprintln!("critical error: failed to initialize logger: {e}");
+                std::process::exit(exit_codes::INTERNAL_ERROR);
+            }
+            commands::unexpose::handle_unexpose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
+        }
+        Commands::Status => {
+            commands::status::handle_status().map_err(Into::into)
+        }
         Commands::Run {
             cmd,
             net,

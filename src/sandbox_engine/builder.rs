@@ -23,8 +23,22 @@ pub fn build_bwrap(
         "--unshare-pid",    // Isolate process tree
         "--unshare-uts",    // Isolate hostname
         "--unshare-cgroup", // Isolate cgroups
+        "--die-with-parent", // Kill sandbox if parent dies
+        "--hostname",
+        "lion", // Set fake hostname
+        "--new-session", // Detach from terminal session
         "--tmpfs",
+        "/", // Start with a fresh, empty root
+        "--dir",
+        "/usr", // Stub for system binaries/libraries
+        "--dir",
+        "/bin", // Stub for common binaries
+        "--dir",
+        "/lib", // Stub for core libraries
+        "--dir",
         "/tmp", // Fresh tmp system
+        "--dir",
+        "/run", // Stub for runtime files
         "--proc",
         "/proc", // Fresh procfs
         "--dev",
