@@ -8,6 +8,7 @@ use crate::sandbox_engine::builder::build_bwrap;
 use crate::sandbox_engine::environment::apply_environment;
 use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
+use crate::proxy::ProxyHandle;
 
 /// Central entry point — builds and runs the sandboxed process.
 pub fn run_sandboxed(
@@ -17,6 +18,7 @@ pub fn run_sandboxed(
     gui: bool,
     _optional: Vec<String>,
     ro_paths: Vec<String>,
+    allowed_domains: Vec<String>,
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -92,6 +94,29 @@ pub fn run_sandboxed(
 
     // 5. Env
     apply_environment(&mut bwrap, gui);
+
+    // Proxy: spawn before bwrap so the port is ready when the sandbox starts
+    let _proxy: Option<ProxyHandle> = match network_mode {
+        crate::sandbox_engine::network::NetworkMode::Http
+        | crate::sandbox_engine::network::NetworkMode::Full => {
+            match ProxyHandle::spawn(&allowed_domains) {
+                Ok(p) => {
+                    let proxy_url = format!("http://127.0.0.1:{}", p.port);
+                    bwrap.arg("--setenv").arg("HTTP_PROXY").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("HTTPS_PROXY").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("http_proxy").arg(&proxy_url);
+                    bwrap.arg("--setenv").arg("https_proxy").arg(&proxy_url);
+                    info!("Proxy running on port {} — domains: {:?}", p.port, allowed_domains);
+                    Some(p)
+                }
+                Err(e) => {
+                    warn!("Proxy failed to start: {} — continuing without proxy", e);
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
 
     bwrap.arg("--chdir").arg(&project_dir).arg("--").args(&cmd);
 

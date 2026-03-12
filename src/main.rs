@@ -4,6 +4,7 @@ pub mod errors;
 pub mod logger;
 pub mod monitor;
 pub mod config;
+pub mod proxy;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
@@ -67,6 +68,11 @@ pub enum Commands {
         /// Mount a directory as read-only inside the sandbox (repeatable, e.g. --ro /home/user/docs).
         #[arg(long, value_name = "PATH")]
         ro: Vec<String>,
+
+        /// Domains the proxy will allow through (requires --net=http or --net=full).
+        /// Use '*' to allow all. Repeatable: --domain google.com --domain api.github.com
+        #[arg(long = "domain", value_name = "DOMAIN")]
+        domains: Vec<String>,
     },
 
     /// INTERNAL: Listen for events on a FIFO and print them.
@@ -94,6 +100,7 @@ fn main() {
             optional,
             debug,
             ro,
+            domains,
         } => {
             // Initialize logging before starting the engine.
             if let Err(e) = logger::init_logging(*debug) {
@@ -107,6 +114,7 @@ fn main() {
                 *gui,
                 optional.clone(),
                 ro.clone(),
+                domains.clone(),
             )
             .map_err(Into::into)
         }
