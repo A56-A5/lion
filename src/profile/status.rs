@@ -1,6 +1,6 @@
 //! `commands/status.rs`
 use anyhow::Result;
-use crate::profile::store;
+use super::store;
 use crate::config::MODULES_JSON;
 use serde_json::Value;
 use colored::*;

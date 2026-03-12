@@ -1,6 +1,6 @@
 //! `commands/expose.rs`
 use anyhow::Result;
-use crate::profile::{store, validator};
+use super::{store, validator};
 use tracing::info;
 
 pub fn handle_expose(

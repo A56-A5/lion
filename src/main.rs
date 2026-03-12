@@ -4,7 +4,6 @@ pub mod errors;
 pub mod logger;
 pub mod config;
 pub mod profile;
-pub mod commands;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
@@ -103,17 +102,17 @@ fn main() {
                 eprintln!("critical error: failed to initialize logger: {e}");
                 std::process::exit(exit_codes::INTERNAL_ERROR);
             }
-            commands::expose::handle_expose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
+            profile::expose::handle_expose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
         }
         Commands::Unexpose { path, module, domain } => {
             if let Err(e) = logger::init_logging(false) {
                 eprintln!("critical error: failed to initialize logger: {e}");
                 std::process::exit(exit_codes::INTERNAL_ERROR);
             }
-            commands::unexpose::handle_unexpose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
+            profile::unexpose::handle_unexpose(path.clone(), module.clone(), domain.clone()).map_err(Into::into)
         }
         Commands::Status => {
-            commands::status::handle_status().map_err(Into::into)
+            profile::status::handle_status().map_err(Into::into)
         }
         Commands::Run {
             cmd,

@@ -5,6 +5,9 @@
 pub mod store;
 pub mod validator;
 pub mod resolver;
+pub mod expose;
+pub mod unexpose;
+pub mod status;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

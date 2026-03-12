@@ -1,6 +1,6 @@
 //! `commands/unexpose.rs`
 use anyhow::Result;
-use crate::profile::store;
+use super::store;
 use tracing::info;
 
 pub fn handle_unexpose(
