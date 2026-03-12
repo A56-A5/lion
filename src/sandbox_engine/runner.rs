@@ -147,6 +147,17 @@ pub fn run_sandboxed(
     // 6. Execute
     bwrap.stderr(Stdio::piped());
     let mut child = bwrap.spawn().map_err(|e| LionError::Internal(e.to_string()))?;
+    let bwrap_pid = child.id();
+
+    // Setup SIGINT handler to kill the sandbox immediately on Ctrl-C
+    let _ = ctrlc::set_handler(move || {
+        eprintln!("\n\x1b[1;33m[LION] Interrupted, cleaning up sandbox (PID {})...\x1b[0m", bwrap_pid);
+        let mut kill = Command::new("kill");
+        kill.arg("-TERM").arg(bwrap_pid.to_string());
+        let _ = kill.status();
+        // The drop handles for monitor/perf will trigger as well when main() exits,
+        // but explicit kill here ensures bwrap dies even if we're stuck in child.wait().
+    });
 
     // Build watch list: project dir + any explicit --ro paths
     let mut watch_paths = vec![project_path.to_string()];

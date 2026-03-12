@@ -210,7 +210,7 @@ try:
                     blank(W), bot(W), "",
                 ]))
             sys.stdout.flush()
-            time.sleep(3)
+            sys.stdout.flush()
             break
 
         cur_ticks = read_aggregated_ticks(active_pids)
@@ -316,9 +316,9 @@ impl PerfHandle {
 
         let script_str = script_path.to_string_lossy().to_string();
         // No trailing 'read' prompt — the Python script already shows a
-        // 3-second "PID exited" banner before it exits, then the terminal
-        // auto-closes (gnome-terminal uses --wait so child.kill() works).
-        let lion_cmd = format!("python3 {} {} {}", script_str, pid, cmd_label);
+        // "PID exited" banner before it exits, then the terminal
+        // auto-closes. We use 'exec' so the terminal process *is* the python process.
+        let lion_cmd = format!("exec python3 {} {} {}", script_str, pid, cmd_label);
 
         let terminals: &[(&str, &[&str])] = &[
             // --wait keeps gnome-terminal foreground so our Child handle is live

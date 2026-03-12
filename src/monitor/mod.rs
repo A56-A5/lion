@@ -155,7 +155,7 @@ fn launch_terminal_monitor(watch_paths: &[String]) -> Option<(String, std::proce
             cmd.arg(arg);
         }
         
-        let lion_cmd_str = lion_cmd.join(" ");
+        let lion_cmd_str = format!("exec {}", lion_cmd.join(" "));
         cmd.arg(&lion_cmd_str);
 
         if let Ok(child) = cmd.spawn() {
