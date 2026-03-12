@@ -51,9 +51,9 @@ pub enum Commands {
         #[arg(last = true, required = true)]
         cmd: Vec<String>,
 
-        /// Allow network access inside the sandbox.
-        #[arg(long, default_value_t = false)]
-        network: bool,
+        /// Network permission profile.
+        #[arg(long, value_name = "PROFILE", default_value = "none")]
+        net: crate::sandbox_engine::network::NetworkMode,
 
         /// Print the bwrap command without executing it (for debugging).
         #[arg(long, default_value_t = false)]
@@ -77,11 +77,11 @@ fn main() {
         Commands::Install => install::run_install(),
         Commands::Run {
             cmd,
-            network,
+            net,
             dry_run,
             gui,
             optional,
-        } => sandbox_engine::run_sandboxed(cmd, network, dry_run, gui, optional),
+        } => sandbox_engine::run_sandboxed(cmd, net, dry_run, gui, optional),
     };
 
     // Handle any errors that bubbled up during execution
