@@ -57,6 +57,7 @@ We strip almost all environment variables. Only these are passed through:
 When enabled, the sandbox shares the host network namespace.
 - **Exposed**: Your full internet connection, local network access, and localhost.
 - **Security Info**: We bind `/etc/resolv.conf`, `/etc/ssl`, and `/etc/pki` read-only so DNS and HTTPS work correctly.
+- **Planned**: Granular profiles (`--net=dns`, `--net=http`) are currently in the design phase to provide protocol-level restriction.
 
 ### Using `--gui`
 This is the "widest" hole in the sandbox, required for visual apps.

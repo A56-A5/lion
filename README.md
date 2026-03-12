@@ -81,6 +81,14 @@ L.I.O.N is built with a modular engine located in `src/sandbox_engine/`:
 - `runner.rs`: Orchestrates the execution flow.
 - `userns.rs`: Pre-flight checks for User Namespaces.
 
-## Evolution: The Scanner Module
+## Roadmap
 
+### 1. Granular Networking Profiles
+We are moving away from the simple `--network` boolean toggles towards protocol-aware profiles:
+- `none`: Default isolation.
+- `dns`: Only allow UDP/TCP port 53.
+- `http`: Restrict access to ports 80/443 via a user-space proxy (slirp4netns + internal broker).
+- `full`: Complete host network sharing.
+
+### 2. The Scanner Module
 To make L.I.O.N portable across diverse Linux ecosystems, we plan to construct a lightweight dynamic `scanner.rs`. Instead of assuming directories, a scanner checks the host OS to discover exact symlinks, library caches, and required D-Bus/DRI sockets, mapping them perfectly into the sandbox before execution.
