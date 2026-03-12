@@ -1,8 +1,14 @@
 //! `sandbox.rs`
 //!
-//! Handles building and executing the `bwrap` command manually.
-//! It applies standard hardcoded system bounds and resolves the
-//! isolated shell/process context.
+//! Responsible for constructing and executing the `bwrap` sandbox command.
+//!
+//! Execution flow:
+//!   1. Verify bwrap is installed
+//!   2. Pre-flight check that user namespaces are available (AppArmor probe)
+//!   3. Build the bwrap command with namespace isolation flags
+//!   4. Mount required system directories and user-defined paths
+//!   5. Forward safe environment variables
+//!   6. Execute and forward the exit code
 
 use anyhow::{Result, bail};
 use std::env;
@@ -31,14 +37,21 @@ pub fn build_bwrap(project_path: &str, network: bool, dry_run: bool) -> Command 
         project_path, // The project directory itself is always mapped RW
     ]);
 
-    // Apply network restrictions
+    // Network isolation:
+    // - Default (no --network flag): sandbox gets its own network namespace with
+    //   no interfaces, so it literally cannot reach the internet or LAN.
+    // - With --network flag: the sandbox shares the host network namespace, and
+    //   we bind in the DNS/TLS config files it needs to resolve names.
     if !network {
+        // --unshare-net gives the sandbox a fresh empty network namespace.
+        // No interfaces = no outbound connections possible.
         bwrap.arg("--unshare-net");
         if !dry_run {
             println!("🌐 Network: disabled");
         }
     } else {
-        println!("🌐 Network: enabled");
+        // Bind in the minimum files needed for DNS resolution and HTTPS.
+        // We use --ro-bind so the sandboxed process cannot modify them.
         if std::path::Path::new("/etc/resolv.conf").exists() {
             bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
         }
@@ -47,6 +60,9 @@ pub fn build_bwrap(project_path: &str, network: bool, dry_run: bool) -> Command 
         }
         if std::path::Path::new("/etc/pki").exists() {
             bwrap.args(["--ro-bind", "/etc/pki", "/etc/pki"]);
+        }
+        if !dry_run {
+            println!("🌐 Network: enabled");
         }
     }
 
@@ -98,12 +114,16 @@ pub fn apply_system_mounts(bwrap: &mut Command, gui: bool) {
     }
 
     if gui {
-        let gui_paths = ["/tmp/.X11-unix", "/usr/share/fonts"];
+        // /usr/share/fonts: read-only is correct, fonts are static data.
+        if std::path::Path::new("/usr/share/fonts").exists() {
+            bwrap.args(["--ro-bind", "/usr/share/fonts", "/usr/share/fonts"]);
+        }
 
-        for path in gui_paths {
-            if std::path::Path::new(path).exists() {
-                bwrap.args(["--ro-bind", path, path]);
-            }
+        // /tmp/.X11-unix: X11 display sockets live here.
+        // Must be --bind (read-write) — X11 clients connect by *writing* to
+        // these Unix sockets.  Using --ro-bind here silently breaks all X11 GUI apps.
+        if std::path::Path::new("/tmp/.X11-unix").exists() {
+            bwrap.args(["--bind", "/tmp/.X11-unix", "/tmp/.X11-unix"]);
         }
 
         if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR")
@@ -165,22 +185,21 @@ pub fn check_userns_available() -> Result<()> {
     }
 }
 
-/// Central function to run the process. Executes steps in order:
-/// 1. bwrap installed check
-/// 2. User namespace pre-flight (AppArmor probe)
-/// 3. Bwrap execution object construction
-/// 4. Environment & CLI application
-/// 5. Execution wrapper handling specific return codes.
-/// 1. Validation
-/// 2. Bwrap execution object construction
-/// 3. Environment & CLI Application
-/// 4. Execution wrapper handling specific return codes.
+/// Central entry point — builds and runs the sandboxed process.
+///
+/// Steps in order:
+///   1. Verify bwrap is installed
+///   2. Pre-flight: confirm user namespaces are available
+///   3. Build the bwrap command object with namespace flags
+///   4. Apply system mounts + user mounts + src/ protection
+///   5. Forward environment variables
+///   6. Execute and forward the child's exit code
 pub fn run_sandboxed(
     cmd: Vec<String>,
     network: bool,
     dry_run: bool,
     gui: bool,
-    _optional: Vec<String>,
+    _optional: Vec<String>, // optional modules not yet wired in this build
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -217,23 +236,27 @@ pub fn run_sandboxed(
         println!("📂 Project dir: {}", project_dir.display());
     }
 
-    // 3. Build Execution object
+    // 3. Build the bwrap command with all namespace isolation flags.
     let mut bwrap = build_bwrap(project_path, network, dry_run);
 
-    // 3. Mounts & Environment
+    // 4. Mounts: system directories, user-defined paths, src/ protection.
     apply_system_mounts(&mut bwrap, gui);
 
-    // Enforce read-only constraint manually onto src directory
+    // Always protect src/ as read-only so the sandboxed process cannot
+    // modify your source code — even if it has write access to the project dir.
     if has_src {
         let src_path = src_dir.to_str().unwrap();
         bwrap.arg("--ro-bind").arg(src_path).arg(src_path);
     }
 
+    // 5. Forward safe environment variables into the sandbox.
     apply_environment(&mut bwrap, gui);
 
+    // Set the working directory inside the sandbox to match the host cwd,
+    // then pass the user's command after the -- separator.
     bwrap.arg("--chdir").arg(&project_dir).arg("--").args(&cmd);
 
-    // Debug print
+    // Print the full bwrap command for debugging and return early.
     if dry_run {
         let program = bwrap.get_program().to_string_lossy();
         let args = bwrap
@@ -248,10 +271,11 @@ pub fn run_sandboxed(
         return Ok(());
     }
 
-    // 4. Execute
+    // 6. Execute — hand control to bwrap and wait for the child to finish.
     let status = bwrap.status()?;
 
-    // Route exit values to identical mappings.
+    // Forward the exact exit code so the caller's shell can read it.
+    // If the process was killed by a signal, status.code() is None — we use 1.
     if status.success() {
         println!("✅ Command completed successfully");
         Ok(())
