@@ -1,0 +1,8 @@
+# Default whitelisted domains for L.I.O.N Proxy
+domains = [
+    "google.com",
+    "github.com",
+    "api.github.com",
+    "crates.io",
+    "pypi.org"
+]

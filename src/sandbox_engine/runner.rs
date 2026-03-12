@@ -99,14 +99,21 @@ pub fn run_sandboxed(
     let _proxy: Option<ProxyHandle> = match network_mode {
         crate::sandbox_engine::network::NetworkMode::Http
         | crate::sandbox_engine::network::NetworkMode::Full => {
-            match ProxyHandle::spawn(&allowed_domains) {
+            // Load persistent domains from proxy.toml
+            let proxy_cfg = crate::proxy::load_config(&project_dir);
+            let mut final_domains = allowed_domains.clone();
+            final_domains.extend(proxy_cfg.domains);
+            final_domains.sort();
+            final_domains.dedup();
+
+            match ProxyHandle::spawn(&final_domains) {
                 Ok(p) => {
                     let proxy_url = format!("http://127.0.0.1:{}", p.port);
                     bwrap.arg("--setenv").arg("HTTP_PROXY").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("HTTPS_PROXY").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("http_proxy").arg(&proxy_url);
                     bwrap.arg("--setenv").arg("https_proxy").arg(&proxy_url);
-                    info!("Proxy running on port {} — domains: {:?}", p.port, allowed_domains);
+                    info!("Proxy running on port {} — domains: {:?}", p.port, final_domains);
                     Some(p)
                 }
                 Err(e) => {

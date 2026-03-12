@@ -5,7 +5,39 @@
 //! and logs every decision to stderr (picked up by the monitor).
 
 use std::net::TcpListener;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ProxyConfig {
+    #[serde(default)]
+    pub domains: Vec<String>,
+}
+
+pub fn load_config(project_dir: &Path) -> ProxyConfig {
+    let path = project_dir.join("proxy.toml");
+    if !path.exists() {
+        return ProxyConfig::default();
+    }
+
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => match toml::from_str::<ProxyConfig>(&contents) {
+            Ok(cfg) => {
+                tracing::info!("Loaded proxy.toml from {}", project_dir.display());
+                cfg
+            }
+            Err(e) => {
+                tracing::warn!("proxy.toml parse error: {e} — using defaults");
+                ProxyConfig::default()
+            }
+        },
+        Err(e) => {
+            tracing::warn!("Could not read proxy.toml: {e} — using defaults");
+            ProxyConfig::default()
+        }
+    }
+}
 
 /// The Python proxy script embedded at compile time.
 /// Uses only stdlib: socket, threading, http.server — no pip required.
@@ -15,7 +47,13 @@ import threading
 import sys
 import os
 
-ALLOWED = set(sys.argv[1].split(",")) if sys.argv[1] != "*" else None
+# Handle wildcard or comma-separated list
+raw_allowed = sys.argv[1].split(",")
+if "*" in raw_allowed:
+    ALLOWED = None
+else:
+    ALLOWED = set(d.strip().lower() for d in raw_allowed if d.strip())
+
 PORT    = int(sys.argv[2])
 
 def log(status, domain):
@@ -137,7 +175,9 @@ impl ProxyHandle {
     pub fn spawn(allowed_domains: &[String]) -> Result<Self, String> {
         let port = find_free_port().ok_or("no free port available")?;
 
-        let domain_arg = if allowed_domains.is_empty() {
+        let domain_arg = if allowed_domains.contains(&"*".to_string()) {
+            "*".to_string()
+        } else if allowed_domains.is_empty() {
             "BLOCK_ALL".to_string()  // nothing will match, everything blocked
         } else {
             allowed_domains.join(",")

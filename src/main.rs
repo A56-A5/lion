@@ -71,7 +71,7 @@ pub enum Commands {
 
         /// Domains the proxy will allow through (requires --net=http or --net=full).
         /// Use '*' to allow all. Repeatable: --domain google.com --domain api.github.com
-        #[arg(long = "domain", value_name = "DOMAIN")]
+        #[arg(long = "domain", value_name = "DOMAIN", value_delimiter = ',')]
         domains: Vec<String>,
     },
 
