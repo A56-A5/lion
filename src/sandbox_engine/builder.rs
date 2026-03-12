@@ -61,21 +61,12 @@ pub fn build_bwrap(
                 info!("Network: full access");
             }
         }
-        NetworkMode::Dns => {
-            // For now, DNS mode shares the network but we should ideally restrict it.
-            // Minimal implementation: Share net but ONLY mount resolv.conf.
-            if std::path::Path::new("/etc/resolv.conf").exists() {
-                bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
-            }
-            if !dry_run {
-                info!("Network: DNS only (restricted)");
-            }
-        }
-        NetworkMode::Http => {
-            // Proxy is launched in runner.rs — bwrap still needs full net to reach the proxy's localhost port
+        NetworkMode::Allow => {
+            // Proxy is launched in runner.rs — bwrap still needs full net to reach the proxy's localhost port.
+            // The proxy enforces the domain allow-list from proxy.toml.
             apply_full_network_mounts(&mut bwrap);
             if !dry_run {
-                info!("Network: HTTP/HTTPS via domain proxy");
+                info!("Network: domain allow-list (proxy.toml)");
             }
         }
     }

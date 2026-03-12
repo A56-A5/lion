@@ -42,7 +42,8 @@ pub mod exit_codes {
 
 EXAMPLES:
     lion run -- ls -la                  Run 'ls' in isolated environment
-    lion run --net=full -- curl google.com    Internet access enabled
+    lion run --net=full -- curl google.com     Full internet access
+    lion run --net=allow -- npm install         Only proxy.toml domains allowed
     lion run --gui -- xclock            GUI support enabled
     lion run --ro /tmp -- python script.py    Mount host /tmp as read-only
 ")]
@@ -63,10 +64,10 @@ pub enum Commands {
         #[arg(last = true, required = true, value_name = "COMMAND")]
         cmd: Vec<String>,
 
-        /// Network permission profile.
-        /// - none: No network access (unshared loopback only)
-        /// - dns:  Allows DNS resolution (shares host net, mounts /etc/resolv.conf)
-        /// - full: Complete internet access (shares host net, mounts SSL certs)
+        /// Network permission profile:
+        ///   none   — no network access at all (default)
+        ///   allow  — only domains in proxy.toml are reachable
+        ///   full   — unrestricted internet access
         #[arg(long, value_name = "PROFILE", default_value = "none")]
         net: crate::sandbox_engine::network::NetworkMode,
 
@@ -153,13 +154,14 @@ fn main() {
     if let Err(e) = result {
         // If it's a structured LionError, we give it a premium UI treatment.
         if let Some(lion_err) = e.downcast_ref::<LionError>() {
+            let exit_code = extract_exit_code(&e);
             print_diagnostic_box(lion_err);
             
             match lion_err {
                 LionError::ExecutionError(_) => eprintln!("❌ Command exited with failure"),
                 _ => eprintln!("❌ Sandbox execution failed"),
             }
-            print_failure_reason(lion_err);
+            print_failure_reason(lion_err, exit_code);
         } else {
             // Otherwise it's an internal L.I.O.N setup error.
             eprintln!("error: {e:#}");
@@ -199,12 +201,22 @@ fn print_diagnostic_box(err: &LionError) {
 
 
 
-fn print_failure_reason(err: &LionError) {
-    let reason = match err {
-        LionError::CommandNotFound(_) => "bubblewrap execvp failed because the binary does not exist",
-        LionError::PermissionDenied(_) => "executable permission missing",
-        LionError::ExecutionError(_) => "command executed but failed internally due to missing file",
-        _ => "internal sandbox setup failure",
+fn print_failure_reason(err: &LionError, exit_code: Option<i32>) {
+    let reason: std::borrow::Cow<str> = match err {
+        LionError::CommandNotFound(_) => "binary not found inside sandbox — check the command name".into(),
+        LionError::PermissionDenied(_) => "executable permission missing".into(),
+        LionError::ExecutionError(_) => match exit_code {
+            // curl / wget: couldn't resolve host — almost always means no network
+            Some(6) => "couldn't resolve host — sandbox network is disabled. Try: --net=allow or --net=full".into(),
+            // curl: failed to connect
+            Some(7) => "connection refused or unreachable — try: --net=full".into(),
+            // curl: SSL/TLS error
+            Some(35) => "SSL handshake failed inside sandbox — try: --net=full".into(),
+            // generic non-zero
+            Some(code) => format!("command exited with code {code} (check program output above)").into(),
+            None => "command failed inside sandbox".into(),
+        },
+        _ => "internal sandbox setup failure".into(),
     };
     eprintln!("(reason: {})", reason);
 }
