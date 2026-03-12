@@ -1,18 +1,13 @@
-//! `main.rs`
-//!
-//! This is the entry point for the L.I.O.N CLI.
-//! It defines the command-line interface using `clap` and routes execution
-//! to the sandbox runner (`sandbox_engine`).
-
-use clap::{Parser, Subcommand};
-
 pub mod install;
 pub mod sandbox_engine;
+pub mod errors;
+pub mod logger;
+
+use clap::{Parser, Subcommand};
+use crate::errors::LionError;
 
 /// Predefined exit codes used by L.I.O.N.
-///
-/// We map internal errors to `1`, CLI misuse to `2`, sandbox failures to `125`.
-/// The actual command inside the sandbox will return its own nested exit code.
+/// ... (rest of mod exit_codes)
 pub mod exit_codes {
     pub const SUCCESS: i32 = 0;
     pub const INTERNAL_ERROR: i32 = 1;
@@ -23,6 +18,7 @@ pub mod exit_codes {
 }
 
 #[derive(Parser)]
+// ... Cli struct
 #[command(name = "lion")]
 #[command(version = "0.1.0")]
 #[command(
@@ -38,11 +34,6 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Perform one-time system setup (requires sudo).
-    ///
-    /// Creates a targeted AppArmor profile that allows bwrap to use user
-    /// namespaces without disabling AppArmor globally.  Run once per machine:
-    ///
-    ///   sudo lion install
     Install,
 
     /// Run a command inside a bubblewrap sandbox.
@@ -66,6 +57,10 @@ pub enum Commands {
         /// Activate optional modules by name (e.g. `--optional audio`).
         #[arg(long, value_name = "MODULE")]
         optional: Vec<String>,
+
+        /// Enable detailed technical logging in the terminal.
+        #[arg(long, default_value_t = false)]
+        debug: bool,
     },
 }
 
@@ -73,29 +68,101 @@ fn main() {
     let cli = Cli::parse();
 
     // Route the command to the appropriate handler
-    let result = match cli.command {
-        Commands::Install => install::run_install(),
+    let result: anyhow::Result<()> = match &cli.command {
+        Commands::Install => install::run_install().map_err(Into::into),
         Commands::Run {
             cmd,
             net,
             dry_run,
             gui,
             optional,
-        } => sandbox_engine::run_sandboxed(cmd, net, dry_run, gui, optional),
+            debug,
+        } => {
+            // Initialize logging before starting the engine.
+            if let Err(e) = logger::init_logging(*debug) {
+                eprintln!("critical error: failed to initialize logger: {e}");
+                std::process::exit(exit_codes::INTERNAL_ERROR);
+            }
+            sandbox_engine::run_sandboxed(
+                cmd.clone(),
+                net.clone(),
+                *dry_run,
+                *gui,
+                optional.clone(),
+            )
+            .map_err(Into::into)
+        }
     };
 
     // Handle any errors that bubbled up during execution
     if let Err(e) = result {
-        // If the error contains a forwarded exit code from the sandboxed process,
-        // we exit with the exact same code so the user's shell can read it.
+        // If it's a structured LionError, we give it a premium UI treatment.
+        if let Some(lion_err) = e.downcast_ref::<LionError>() {
+            print_diagnostic_box(lion_err);
+            
+            match lion_err {
+                LionError::ExecutionError(_) => eprintln!("❌ Command exited with failure"),
+                _ => eprintln!("❌ Sandbox execution failed"),
+            }
+            print_failure_reason(lion_err);
+        } else {
+            // Otherwise it's an internal L.I.O.N setup error.
+            eprintln!("error: {e:#}");
+        }
+
+        // Forward exit code
         if let Some(code) = extract_exit_code(&e) {
             std::process::exit(code);
         }
-
-        // Otherwise it's an internal L.I.O.N setup error.
-        eprintln!("error: {e:#}");
         std::process::exit(exit_codes::INTERNAL_ERROR);
+    } else {
+        // Success case
+        println!("✔ Command executed successfully");
+        print_success_reason(&cli);
     }
+}
+
+/// Renders an ASCII diagnostic box for Lion failures.
+fn print_diagnostic_box(err: &LionError) {
+    eprintln!("\n+----------------------------------------------------------+");
+    eprintln!("| LION ERROR                                               |");
+    eprintln!("+----------------------------------------------------------+");
+    
+    let msg = format!("{}", err);
+    for line in msg.lines() {
+        eprintln!("| {:<56} |", line);
+    }
+    
+    // Optional Hint for Permission Denied
+    if let LionError::PermissionDenied(path) = err {
+        eprintln!("+----------------------------------------------------------+");
+        eprintln!("| Try: chmod +x {:<42} |", path);
+    }
+    
+    eprintln!("+----------------------------------------------------------+");
+    eprintln!("| See log for details: ~/.lion/logs/last-run.log           |");
+    eprintln!("+----------------------------------------------------------+");
+}
+
+fn print_success_reason(cli: &Cli) {
+    if let Commands::Run { cmd, .. } = &cli.command {
+        let program = cmd.first().map(|s| s.as_str()).unwrap_or("");
+        let reason = match program {
+            "pwd" => "working directory set via --chdir and project directory is bind-mounted inside sandbox",
+            _ => "command executed normally inside sandbox with project directory mounted",
+        };
+        println!("(reason: {})", reason);
+    }
+}
+
+fn print_failure_reason(err: &LionError) {
+    let reason = match err {
+        LionError::CommandNotFound(_) => "bubblewrap execvp failed because the binary does not exist",
+        LionError::PermissionDenied(_) => "executable permission missing",
+        LionError::ExecutionError(_) => "command executed but failed internally due to missing file",
+        _ => "internal sandbox setup failure",
+    };
+    eprintln!("(reason: {})", reason);
 }
 
 /// Helper function to parse an exit code back out of a nested string error message.

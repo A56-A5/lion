@@ -9,9 +9,10 @@
 //! Must be run with root privileges once per machine:
 //!   sudo lion install
 
-use anyhow::{bail, Result};
+use crate::errors::{LionError, Result};
 use std::path::Path;
 use std::process::Command;
+use tracing::{error, info};
 
 /// Profile written to `/etc/apparmor.d/`.
 ///
@@ -32,22 +33,14 @@ const PROFILE_PATH: &str = "/etc/apparmor.d/bwrap-userns-restrict";
 pub fn run_install() -> Result<()> {
     // 1. Must run as root — we write to /etc/apparmor.d/
     if !is_root() {
-        eprintln!(
-            "[lion] This command requires root to write the AppArmor profile.\n\
-             Run it as:\n\
-             \n\
-             \x1b[1m    sudo lion install\x1b[0m\n"
-        );
-        bail!("exit code: 1");
+        return Err(LionError::Unauthorized(
+            "This command requires root to write the AppArmor profile.".to_string(),
+        ));
     }
 
     // 2. Check AppArmor is present on this machine
     if !is_apparmor_active() {
-        println!(
-            "[lion] AppArmor does not appear to be active on this system.\n\
-             Nothing to do — `bwrap --unshare-user` should already work.\n\
-             If it still fails, check `dmesg | grep -i userns`."
-        );
+        info!("AppArmor does not appear to be active on this system. Nothing to do.");
         return Ok(());
     }
 
@@ -56,26 +49,17 @@ pub fn run_install() -> Result<()> {
     if Path::new(restrict_path).exists() {
         let val = std::fs::read_to_string(restrict_path).unwrap_or_default();
         if val.trim() == "0" {
-            println!(
-                "[lion] `apparmor_restrict_unprivileged_userns` is already 0 — \
-                 user namespaces are unrestricted.\n\
-                 No profile installation needed."
-            );
+            info!("User namespaces are already unrestricted. No profile needed.");
             return Ok(());
         }
     }
 
     // 4. Write the profile
     std::fs::write(PROFILE_PATH, APPARMOR_PROFILE).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to write AppArmor profile to {}: {}\n\
-             Make sure you are running as root.",
-            PROFILE_PATH,
-            e
-        )
+        LionError::Internal(format!("Failed to write AppArmor profile to {}: {}", PROFILE_PATH, e))
     })?;
 
-    println!("[lion] Wrote AppArmor profile → {}", PROFILE_PATH);
+    info!("Wrote AppArmor profile to {}", PROFILE_PATH);
 
     // 5. Load the profile into the running kernel
     let status = Command::new("apparmor_parser")
@@ -84,31 +68,17 @@ pub fn run_install() -> Result<()> {
 
     match status {
         Ok(s) if s.success() => {
-            println!(
-                "[lion] Profile loaded successfully.\n\
-                 \n\
-                 \x1b[1m[lion] Setup complete.\x1b[0m \
-                 You can now run `lion run` from any terminal without root."
-            );
+            info!("AppArmor profile loaded successfully. Setup complete.");
             Ok(())
         }
         Ok(s) => {
             let code = s.code().unwrap_or(1);
-            eprintln!(
-                "[lion] apparmor_parser exited with code {}.\n\
-                 The profile was written to {} but may not be active.\n\
-                 Try: sudo apparmor_parser -r {}",
-                code, PROFILE_PATH, PROFILE_PATH
-            );
-            bail!("exit code: {}", code);
+            error!("apparmor_parser exited with code {}.", code);
+            Err(LionError::ExecutionError(code))
         }
         Err(e) => {
-            eprintln!(
-                "[lion] Could not run apparmor_parser: {}\n\
-                 Ensure `apparmor-utils` is installed: sudo apt install apparmor-utils",
-                e
-            );
-            bail!("exit code: 1");
+            error!("Could not run apparmor_parser: {}. Ensure apparmor-utils is installed.", e);
+            Err(LionError::DependencyMissing("apparmor-utils".to_string()))
         }
     }
 }

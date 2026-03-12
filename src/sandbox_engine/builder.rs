@@ -35,6 +35,7 @@ pub fn build_bwrap(
     ]);
 
     use crate::sandbox_engine::network::NetworkMode;
+    use tracing::info;
 
     match network_mode {
         NetworkMode::None => {
@@ -42,14 +43,14 @@ pub fn build_bwrap(
             // No interfaces = no outbound connections possible.
             bwrap.arg("--unshare-net");
             if !dry_run {
-                println!("🌐 Network: disabled");
+                info!("Network: disabled");
             }
         }
         NetworkMode::Full => {
             // Share the host network namespace.
             apply_full_network_mounts(&mut bwrap);
             if !dry_run {
-                println!("🌐 Network: full access");
+                info!("Network: full access");
             }
         }
         NetworkMode::Dns => {
@@ -59,7 +60,7 @@ pub fn build_bwrap(
                 bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
             }
             if !dry_run {
-                println!("🌐 Network: DNS only (restricted)");
+                info!("Network: DNS only (restricted)");
             }
         }
         NetworkMode::Http => {
@@ -67,7 +68,7 @@ pub fn build_bwrap(
             // For now, we allow full network but print a warning about the proxy.
             apply_full_network_mounts(&mut bwrap);
             if !dry_run {
-                println!("🌐 Network: HTTP/HTTPS (proxy not yet implemented, allowing full)");
+                info!("Network: HTTP/HTTPS (proxy not yet implemented, allowing full)");
             }
         }
     }
