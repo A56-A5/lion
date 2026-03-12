@@ -5,9 +5,14 @@ use chrono::Local;
 
 /// Read stderr from the sandboxed process line-by-line and print live events.
 pub fn watch(stderr: ChildStderr, ro_paths: Vec<String>) {
+    let reader = BufReader::new(stderr);
+    watch_buffered(reader, ro_paths);
+}
+
+/// Read events from any BufRead (e.g. FIFO) and print live events.
+pub fn watch_buffered<R: BufRead>(reader: R, ro_paths: Vec<String>) {
     print_banner(&ro_paths);
 
-    let reader = BufReader::new(stderr);
     for line in reader.lines() {
         match line {
             Ok(line) if !line.trim().is_empty() => print_event(&line),

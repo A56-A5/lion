@@ -68,6 +68,16 @@ pub enum Commands {
         #[arg(long, value_name = "PATH")]
         ro: Vec<String>,
     },
+
+    /// INTERNAL: Listen for events on a FIFO and print them.
+    #[command(hide = true)]
+    Monitor {
+        /// The FIFO path to read from.
+        fifo: String,
+        /// The watch paths for the banner.
+        #[arg(long)]
+        watch_paths: Vec<String>,
+    },
 }
 
 fn main() {
@@ -99,6 +109,10 @@ fn main() {
                 ro.clone(),
             )
             .map_err(Into::into)
+        }
+        Commands::Monitor { fifo, watch_paths } => {
+            // Monitor mode doesn't need full logging init, it's the UI itself.
+            monitor::run_monitor_subcommand(fifo.clone(), watch_paths.clone()).map_err(Into::into)
         }
     };
 

@@ -96,7 +96,7 @@ pub fn watch(paths: Vec<String>, stop: Arc<AtomicBool>) {
             };
 
             let path_str = full_path.to_string_lossy();
-            let (tag, color, icon) = classify_event(event.mask);
+            let (tag, color) = classify_event(event.mask);
 
             // Skip noisy internal events (e.g. OPEN on directory itself)
             if event.mask.contains(EventMask::ISDIR) && event.mask.contains(EventMask::OPEN) {
@@ -105,8 +105,8 @@ pub fn watch(paths: Vec<String>, stop: Arc<AtomicBool>) {
 
             let now = chrono::Local::now().format("%H:%M:%S");
             eprintln!(
-                "[LION] {}  {}{}  {}{}\x1b[0m  \x1b[36m{}\x1b[0m",
-                now, color, tag, icon, "\x1b[0m", path_str
+                "[LION] {}  {}{}{}\x1b[0m  \x1b[36m{}\x1b[0m",
+                now, color, tag, "\x1b[0m", path_str
             );
         }
     }
@@ -132,16 +132,16 @@ fn add_watch(
     }
 }
 
-fn classify_event(mask: EventMask) -> (&'static str, &'static str, &'static str) {
+fn classify_event(mask: EventMask) -> (&'static str, &'static str) {
     if mask.contains(EventMask::ACCESS) || mask.contains(EventMask::OPEN) || mask.contains(EventMask::CLOSE_NOWRITE) {
-        ("READ   ", "\x1b[1m\x1b[32m", "✅ ") // green — allowed read
+        ("READ   ", "\x1b[1m\x1b[32m") // green — allowed read
     } else if mask.contains(EventMask::MODIFY) {
-        ("WRITE  ", "\x1b[1m\x1b[33m", "✏️  ") // yellow — write
+        ("WRITE  ", "\x1b[1m\x1b[33m") // yellow — write
     } else if mask.contains(EventMask::CREATE) {
-        ("CREATE ", "\x1b[1m\x1b[34m", "📄 ") // blue — create
+        ("CREATE ", "\x1b[1m\x1b[34m") // blue — create
     } else if mask.contains(EventMask::DELETE) {
-        ("DELETE ", "\x1b[1m\x1b[31m", "🗑️  ") // red — delete
+        ("DELETE ", "\x1b[1m\x1b[31m") // red — delete
     } else {
-        ("EVENT  ", "\x1b[90m", "")
+        ("EVENT  ", "\x1b[90m")
     }
 }
