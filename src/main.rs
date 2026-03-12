@@ -5,9 +5,11 @@ pub mod logger;
 pub mod monitor;
 pub mod config;
 pub mod proxy;
+pub mod optional_modules;
 
 use clap::{Parser, Subcommand};
 use crate::errors::LionError;
+use anyhow::Context;
 
 mod exit_codes {
     pub const INTERNAL_ERROR: i32 = 1;
@@ -103,6 +105,40 @@ pub enum Commands {
         #[arg(long)]
         watch_paths: Vec<String>,
     },
+
+    /// Manage project-local optional modules.
+    Modules {
+        #[command(subcommand)]
+        sub: ModuleCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModuleCommands {
+    /// List all configured optional modules.
+    List,
+    /// Add a new optional module to the project.
+    Add {
+        /// Unique name for the module.
+        #[arg(long)]
+        name: String,
+        /// Host path to mount.
+        #[arg(long)]
+        path: String,
+        /// Initialize as enabled.
+        #[arg(long, default_value_t = false)]
+        enabled: bool,
+    },
+    /// Remove an optional module by name.
+    Remove {
+        /// Name of the module to remove.
+        name: String,
+    },
+    /// Toggle a module between enabled and blocked.
+    Toggle {
+        /// Name of the module to toggle.
+        name: String,
+    },
 }
 
 fn main() {
@@ -116,7 +152,7 @@ fn main() {
             net,
             dry_run,
             gui,
-            optional: _,
+            optional,
             debug,
             ro,
             domains,
@@ -133,6 +169,7 @@ fn main() {
                 *gui,
                 ro.clone(),
                 domains.clone(),
+                optional.clone(),
             )
             .map_err(Into::into)
         }
@@ -140,6 +177,18 @@ fn main() {
             // Monitor mode doesn't need full logging init, it's the UI itself.
             monitor::run_monitor_subcommand(fifo.clone(), watch_paths.clone()).map_err(Into::into)
         }
+        Commands::Modules { sub } => (|| {
+            let project_dir = std::env::current_dir().context("failed to get current directory")?;
+            match sub {
+                ModuleCommands::List => optional_modules::list(&project_dir),
+                ModuleCommands::Add { name, path, enabled } => {
+                    let state = if *enabled { 1 } else { 0 };
+                    optional_modules::add(&project_dir, name.clone(), path.clone(), state)
+                }
+                ModuleCommands::Remove { name } => optional_modules::remove(&project_dir, name),
+                ModuleCommands::Toggle { name } => optional_modules::toggle(&project_dir, name),
+            }
+        })().map_err(Into::into),
     };
 
     // Handle any errors that bubbled up during execution

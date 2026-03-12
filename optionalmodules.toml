@@ -1,0 +1,9 @@
+[[modules]]
+name = "TestAssets"
+path = "/tmp/lion_test_assets"
+state = 1
+
+[[modules]]
+name = "LogData"
+path = "/tmp/lion-logs"
+state = 0

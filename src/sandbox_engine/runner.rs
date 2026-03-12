@@ -18,6 +18,7 @@ pub fn run_sandboxed(
     gui: bool,
     ro_paths: Vec<String>,
     allowed_domains: Vec<String>,
+    optional_names: Vec<String>,
 ) -> Result<()> {
     // 1. Core Dependency Check
     if Command::new("bwrap")
@@ -88,6 +89,23 @@ pub fn run_sandboxed(
             bwrap.arg("--ro-bind").arg(path).arg(path);
         } else {
             warn!("--ro path does not exist, skipping: {}", path);
+        }
+    }
+
+    // 4d. Optional Modules from optionalmodules.toml + CLI --optional
+    let opt_cfg = crate::optional_modules::OptionalModulesConfig::load(&project_dir)
+        .map_err(|e| LionError::Internal(e.to_string()))?;
+    
+    for m in opt_cfg.modules {
+        let is_requested = optional_names.contains(&m.name);
+        if m.state == 1 || is_requested {
+            let p = std::path::Path::new(&m.path);
+            if p.exists() {
+                info!("Mounting optional module '{}': {}", m.name, m.path);
+                bwrap.arg("--bind").arg(&m.path).arg(&m.path);
+            } else {
+                warn!("Optional module '{}' path does not exist: {}", m.name, m.path);
+            }
         }
     }
 
