@@ -279,10 +279,29 @@ impl App {
     }
 
     pub fn ram_spark_data(&self) -> Vec<u64> {
-        let max = self.ram_history.iter().copied().max().unwrap_or(1).max(1);
+        if self.ram_history.is_empty() {
+            return Vec::new();
+        }
+
+        let min = self.ram_history.iter().copied().min().unwrap_or(0);
+        let max = self.ram_history.iter().copied().max().unwrap_or(min);
+
+        if max <= min {
+            return vec![50; self.ram_history.len()];
+        }
+
+        let range = max - min;
+        let pad = (range / 10).max(1);
+        let floor = min.saturating_sub(pad);
+        let ceil = max.saturating_add(pad);
+        let denom = (ceil - floor).max(1) as u128;
+
         self.ram_history
             .iter()
-            .map(|&v| (v * 100 / max).min(100))
+            .map(|&v| {
+                let numer = (v.saturating_sub(floor) as u128) * 100;
+                ((numer / denom) as u64).min(100)
+            })
             .collect()
     }
 
