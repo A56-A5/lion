@@ -17,34 +17,50 @@ mod exit_codes {
 }
 
 #[derive(Parser)]
-// ... Cli struct
 #[command(name = "lion")]
 #[command(version = "0.1.0")]
 #[command(
-    about = "L.I.O.N: Lightweight Isolated Orchestration Node",
-    long_about = "L.I.O.N is a per-execution filesystem sandbox for Linux using bubblewrap. \
-                  It builds a synthetic root, wipes the environment, and creates a fresh \
-                  independent namespace cage for every command. Perfect for running \
-                  untrusted code, isolating builds, or analyzing file access patterns."
+    about = "L.I.O.N \u{2014} Lightweight Isolated Orchestration Node",
+    long_about = "Run any command inside a disposable Linux sandbox.\n\
+                  Bubblewrap-powered: isolated namespaces, wiped environment,\n\
+                  synthetic root \u{2014} cage is destroyed the moment the process exits."
 )]
 #[command(arg_required_else_help = true)]
 #[command(propagate_version = true)]
 #[command(help_template = "\
 {before-help}{name} {version}
-{author-with-newline}{about-with-newline}
+{about-with-newline}
 {usage-heading} {usage}
 
 {all-args}{after-help}
+")]
+#[command(after_help = "\
+\x1b[1;96mEXAMPLES:\x1b[0m
+  \x1b[90m# Basic isolation\x1b[0m
+  lion run -- ls -la
+  lion run -- python3 script.py
 
-EXAMPLES:
-    lion run -- ls -la                         Run 'ls' in isolated environment
-    lion run --net=full -- curl google.com     Full internet access
-    lion run --net=allow -- npm install        Only proxy.toml domains allowed
-    lion run --optional X11 -- xclock          Activate X11 module for GUI app
-    lion run --ro /tmp -- python script.py     Mount host /tmp as read-only
-    lion saved status                          View all saved optional modules
-    lion saved enable GPU                      Enable GPU module permanently
-    lion run --optional GPU -- glxgears        Override: activate GPU for this run only
+  \x1b[90m# Network modes\x1b[0m
+  lion run --net=full  -- curl https://example.com
+  lion run --net=allow -- npm install
+
+  \x1b[90m# GUI apps\x1b[0m
+  lion run --tui --gui -- gnome-text-editor
+
+  \x1b[90m# Mount extra paths\x1b[0m
+  lion run --ro /tmp -- python3 script.py
+
+  \x1b[90m# Optional modules\x1b[0m
+  lion saved status
+  lion saved enable GPU
+  lion run --optional GPU -- glxgears
+
+\x1b[1;96mCONFIG:\x1b[0m
+  Drop a \x1b[97mlion.toml\x1b[0m in your project root to set default mounts,
+  network mode, and access level. Run \x1b[97mlion run\x1b[0m \u{2014} it auto-detects it.
+
+\x1b[1;96mFIRST TIME?\x1b[0m
+  sudo $(which lion) install     (one-time AppArmor setup)
 ")]
 pub struct Cli {
     #[command(subcommand)]

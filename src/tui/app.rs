@@ -152,6 +152,8 @@ impl App {
             }
             TuiMsg::KillRequested => {
                 self.force_kill_requested = true;
+                self.log.push_back(SandboxEvent::info("<!> FORCE KILL REQUESTED — terminating cage..."));
+                return true; // Exit TUI immediately
             }
         }
         self.should_quit

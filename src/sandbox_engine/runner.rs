@@ -9,7 +9,7 @@ use crate::sandbox_engine::environment::apply_environment;
 use crate::sandbox_engine::mounts::apply_system_mounts;
 use crate::sandbox_engine::userns::check_userns_available;
 use crate::proxy::ProxyHandle;
-use crate::sandbox_engine::procfs::{get_process_tree, get_direct_child};
+use crate::sandbox_engine::procfs::{get_process_tree, get_direct_child, kill_process_tree};
 
 fn is_executable(path: &std::path::Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
@@ -249,6 +249,7 @@ pub fn run_sandboxed(
         let status = loop {
             if let Ok(Some(s)) = child.try_wait() { break s; }
             if tui_handle.kill_requested() {
+                kill_process_tree(bwrap_pid);
                 let _ = child.kill();
                 break child.wait().unwrap_or_else(|_| Command::new("true").status().unwrap());
             }
@@ -258,7 +259,7 @@ pub fn run_sandboxed(
                     break child.wait().unwrap_or_else(|_| Command::new("true").status().unwrap());
                 }
             }
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         };
 
         tui_handle.log(crate::tui::SandboxEvent::info(format!("[LION] sandbox exited — status {}", status.code().unwrap_or(-1))));
@@ -286,7 +287,7 @@ pub fn run_sandboxed(
                     break child.wait().unwrap_or_else(|_| Command::new("true").status().unwrap());
                 }
             }
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         };
 
         finalize_execution(status, cmd)

@@ -72,3 +72,18 @@ pub fn get_direct_child(ppid: u32) -> Option<u32> {
     }
     None
 }
+
+/// Kills an entire process tree starting from `root_pid` with SIGKILL (-9).
+pub fn kill_process_tree(root_pid: u32) {
+    let pids = get_process_tree(root_pid);
+    // Kill in reverse (bottom-up) so children don't become orphans before they can be killed.
+    for pid in pids.iter().rev() {
+        // We use the 'kill' command for simplicity and to avoid direct libc dependencies where possible.
+        let _ = std::process::Command::new("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status();
+    }
+}
