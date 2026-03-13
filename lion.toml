@@ -2,62 +2,27 @@
 # L.I.O.N — lion.toml   (per-project sandbox configuration)
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Place this file in your project root.  lion reads it automatically.
+# Place this file in your project root.  lion reads it automatically and merges
+# it with the global config at ~/.config/lion/lion.toml.
 # All paths support ~ for your home directory.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
 [sandbox]
 # ── Project directory access ──────────────────────────────────────────────────
-# Controls how the current working directory is exposed inside the sandbox.
-#
-#   "ro"  — read-only   (safe default: code can be read but not modified)
-#   "rw"  — read-write  (use when the program needs to write output files)
-#
+#   "rw"  — project root is writable (for build output, etc.)
+#   "ro"  — project root is read-only (safer default)
 project_access = "rw"
 
 # ── Source directory protection ───────────────────────────────────────────────
-# When project_access = "rw", lion layers a second read-only bind on top of
-# <project>/src so your source code cannot be modified even though the rest of
-# the project directory is writable (e.g. for build artefacts / output).
-# Set to "rw" to allow the sandboxed process to modify source files too.
-#
+# When project_access = "rw", lion overlays a read-only bind on <project>/src
+# so source code is protected even if the rest of the project is writable.
 src_access = "ro"
 
-# ── Extra bind mounts ─────────────────────────────────────────────────────────
-# Expose additional host paths into the sandbox.
-# Each [[mount]] block adds one path.
+# ── Project-specific extra mounts ─────────────────────────────────────────────
+# Add paths that are only needed for THIS project here.
+# For mounts you want everywhere, use ~/.config/lion/lion.toml instead.
 #
-# Fields:
-#   path    (required) — absolute or ~ path on the host
-#   access  (required) — "ro" (read-only) or "rw" (read-write)
-#
-# Examples:
-#
-#   Read-only config file:
-[[mount]]
-path = "~/.npmrc"
-access = "ro"
-#
-#   Read-only directory (e.g. shared dataset):
-# [[mount]]
-# path = "~/datasets/imagenet"
-# access = "ro"
-#
-#   Read-write output directory (process writes results here):
 # [[mount]]
 # path = "/tmp/lion-output"
 # access = "rw"
-#
-#   Expose a credentials file needed at runtime:
-# [[mount]]
-# path = "~/.config/gcloud/application_default_credentials.json"
-# access = "ro"
-
-[[mount]]
-path = "/home/vishnunandan555/Test"
-access = "rw"
-
-[[mount]]
-path = "/home/vishnunandan555/flutter"
-access = "rw"

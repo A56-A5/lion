@@ -55,7 +55,7 @@ pub fn run_sandboxed(
         .ok_or_else(|| LionError::EnvironmentError("path is not valid UTF-8".to_string()))?;
 
     // 3. Load configuration
-    let lion_cfg = crate::config::load(&project_dir);
+    let lion_cfg = crate::config::load_merged(&project_dir);
     let project_ro = lion_cfg.project_is_readonly();
     let src_ro = lion_cfg.src_is_readonly();
     if !dry_run {
