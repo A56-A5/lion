@@ -41,7 +41,7 @@ In one line: **limit what code can access, isolate execution, and observe behavi
 
 ---
 
-## 🎯 Why Teams Pick It
+## 🎯 Why Teams Should Pick It
 
 - **Lower friction than container workflows for single commands**: no image build or container lifecycle needed.
 - **More observable than typical sandbox wrappers**: isolation and live telemetry are integrated in one run path.
@@ -50,7 +50,49 @@ In one line: **limit what code can access, isolate execution, and observe behavi
 
 ---
 
-## ⚠️ Current Boundaries (No Hype)
+## 🔐 Safety Features vs Other Tool Types
+
+What L.I.O.N gives you, in one flow, for each risky command:
+
+- **Per-command disposable isolation** (fresh sandbox each run)
+- **Explicit file exposure control** (what is visible/readable/writable)
+- **Environment scrubbing** (`--clearenv`) to reduce secret leakage
+- **Network policy per run** (`none` / `allow` / `full`)
+- **Live behavior evidence** (file events, blocked attempts, process/perf in TUI)
+
+This is the practical difference: most tools do one or two of these well; L.I.O.N combines them for daily command execution.
+
+### Quick comparison (typical out-of-box usage)
+
+| Tool / Category | Main Goal | Process/File Isolation | Per-Run Network Policy | Monitoring | Built-in Live File/Event Observability | Env Scrubbing Workflow | Setup Friction for Daily `npm/pip/script` Runs |
+|---|---|---|---|---|---|---|---|
+| **L.I.O.N** | Safe execution of risky dev commands | **Yes** (namespace + explicit mounts) | **Yes** (`none` / `allow` / `full`) | **Integrated** (events + process/perf in TUI) | **Yes** (integrated TUI/event stream) | **Yes** (`--clearenv`) | **Low** |
+| **Firewall (UFW/iptables/nftables)** | Host/network traffic control | No | Network only | Network-level only (rule hits/logs) | No | No | Medium (rule management) |
+| **Firejail / nsjail** | Sandboxing via profiles/policies | Yes | Yes (policy-based) | Partial (depends on external logging/tools) | Usually external/manual | Possible, profile-dependent | Medium–High (profile tuning) |
+| **Docker / Podman** | Containerized app/runtime packaging | Yes (container boundary) | Yes | Container/runtime metrics/logs (tooling-dependent) | Usually external (`logs`, audit tools) | Possible via container env setup | Medium (image/container workflow) |
+| **VMs (KVM/VirtualBox/VMware)** | Strong full-OS isolation | **Strong** | Yes | Hypervisor + guest tooling (typically external) | Usually external/manual | Guest-managed | High (heavier lifecycle) |
+| **AppArmor / SELinux (LSM)** | Kernel MAC policy enforcement | Policy-based | Indirect/policy-based | Audit/event logs (policy/audit pipeline dependent) | No native app dashboard | N/A | High (policy authoring) |
+| **gVisor / Kata / microVM stacks** | Hardened container isolation | Stronger boundary model | Yes | Runtime/infrastructure observability (external stack) | Usually external | Container-managed | High (infra-oriented) |
+
+> Notes:
+> - This table compares **common real-world usage patterns**, not maximum possible custom setups.
+> - L.I.O.N is not a VM replacement; its strength is **low-friction containment + observability** for frequent risky commands.
+
+### Similar Tool vs Why choose L.I.O.N
+
+| Similar Tool | Why would you want L.I.O.N over Similar Tool |
+|---|---|
+| **Firewall (UFW/iptables/nftables)** | Firewalls mainly control network flows. L.I.O.N adds process/file isolation, env scrubbing, and live per-command behavior visibility in the same workflow. |
+| **Firejail / nsjail** | Powerful sandboxing, but often profile-heavy for daily dev use. L.I.O.N is more opinionated for risky command workflows with integrated monitoring/TUI out of the box. |
+| **Docker / Podman** | Great for containerized runtime packaging. L.I.O.N is lighter for ad-hoc command hardening without image lifecycle overhead for each risky command. |
+| **VMs (KVM/VirtualBox/VMware)** | VMs provide stronger boundaries, but with heavier setup/runtime overhead. L.I.O.N is faster for frequent command-level containment during development. |
+| **AppArmor / SELinux (LSM)** | Strong policy enforcement layers, but policy authoring/operations can be complex. L.I.O.N provides an easier command-centric UX plus integrated live observability. |
+| **gVisor / Kata / microVM stacks** | Stronger infra/container isolation options, but usually infrastructure-oriented. L.I.O.N targets developer desktops and quick per-command safety checks. |
+| **Raw Bubblewrap (`bwrap`)** | `bwrap` is the primitive; L.I.O.N adds policy layers, config merging, network modes, and observability as a complete user workflow. |
+
+---
+
+## ⚠️ Current Boundaries 
 
 - Not a VM/hypervisor security boundary.
 - No seccomp syscall filter yet.
