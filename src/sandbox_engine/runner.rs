@@ -87,7 +87,7 @@ pub fn run_sandboxed(
         .map_err(|e| LionError::Internal(e.to_string()))?;
     let mut active_modules: Vec<String> = Vec::new();
     
-    for m in opt_cfg.modules {
+    for m in &opt_cfg.modules {
         let is_requested = optional_names.contains(&m.name);
         let is_enabled = m.state == 1;
         
@@ -180,12 +180,46 @@ pub fn run_sandboxed(
 
         let mut exposed_paths: Vec<String> = Vec::new();
         exposed_paths.push(format!("{} ({})", project_path, if project_ro { "ro" } else { "rw" }));
+        
+        // Host mounts from lion.toml
         for entry in &lion_cfg.mount {
-            exposed_paths.push(format!("{} ({})", entry.resolved_path(), if entry.is_readonly() { "ro" } else { "rw" }));
+            let res = entry.resolved_path();
+            if std::path::Path::new(&res).exists() {
+                exposed_paths.push(format!("{} ({})", res, if entry.is_readonly() { "ro" } else { "rw" }));
+            }
         }
-        for path in &ro_paths { exposed_paths.push(format!("{} (ro)", path)); }
-        exposed_paths.sort(); exposed_paths.dedup();
-        active_modules.sort(); active_modules.dedup();
+        
+        // CLI --ro paths
+        for p in &ro_paths {
+            if std::path::Path::new(p).exists() {
+                exposed_paths.push(format!("{} (ro)", p));
+            }
+        }
+
+        // Optional module mounts
+        // We re-run the module logic briefly to find paths, or we could have stored them.
+        // Let's just collect from opt_cfg for the enabled/requested ones.
+        for m in &opt_cfg.modules {
+            if m.state == 1 || optional_names.contains(&m.name) {
+                for mount in &m.mounts {
+                    let src = crate::optional_modules::resolve_vars(&mount.src);
+                    if std::path::Path::new(&src).exists() {
+                        exposed_paths.push(format!("{} ({})", src, mount.mode));
+                    }
+                }
+                if let Some(path) = &m.path {
+                    let res = crate::optional_modules::resolve_vars(path);
+                    if std::path::Path::new(&res).exists() {
+                        exposed_paths.push(format!("{} (rw)", res));
+                    }
+                }
+            }
+        }
+
+        exposed_paths.sort();
+        exposed_paths.dedup();
+        active_modules.sort();
+        active_modules.dedup();
 
         tui_handle.send_info(crate::tui::SandboxInfo {
             command: cmd.clone(),

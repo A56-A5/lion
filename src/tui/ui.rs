@@ -232,17 +232,40 @@ fn render_status_column(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(m_lines), m_inner);
 
     // Paths
+    let paths = &app.sandbox_info.exposed_paths;
+    let p_count = paths.len();
+    
     let p_block = Block::default()
-        .title(" ⬡ PATHS ")
+        .title(Line::from(vec![
+            Span::styled(" ⬡ PATHS ", Style::default().fg(C_BRAND).bold()),
+            Span::styled(format!("({}) ", p_count), Style::default().fg(C_DIM)),
+        ]))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(C_BORDER));
+    
     let p_inner = p_block.inner(chunks[1]);
+    let p_height = p_inner.height as usize;
+    
+    // Add scroll footer if there are paths
+    let p_block = if p_count > 0 {
+        let start = app.paths_scroll + 1;
+        let end = (app.paths_scroll + p_height).min(p_count);
+        p_block.title_bottom(Line::from(vec![
+            Span::styled(
+                format!(" {} - {} / {} ", start, end, p_count),
+                Style::default().fg(C_DIM)
+            )
+        ]).alignment(Alignment::Right))
+    } else {
+        p_block
+    };
+    
     f.render_widget(p_block, chunks[1]);
 
-    let paths = &app.sandbox_info.exposed_paths;
     let p_lines: Vec<Line> = paths.iter()
-        .take(6)
+        .skip(app.paths_scroll)
+        .take(p_height)
         .map(|p| {
             let color = if p.contains("(ro)") { C_DIM } else { C_WARN };
             Line::from(Span::styled(format!("↳ {}", p), Style::default().fg(color)))

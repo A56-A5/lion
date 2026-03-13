@@ -86,6 +86,9 @@ pub struct App {
 
     /// Whether the user has requested a force kill.
     pub force_kill_requested: bool,
+
+    /// Vertical scroll offset for the exposed paths panel.
+    pub paths_scroll: usize,
 }
 
 impl App {
@@ -109,6 +112,7 @@ impl App {
             sandbox_info: SandboxInfo::default(),
             elapsed_secs: 0,
             force_kill_requested: false,
+            paths_scroll: 0,
         }
     }
 
@@ -214,6 +218,17 @@ impl App {
                 self.log_follow = !self.log_follow;
                 if self.log_follow {
                     self.log_scroll = self.log.len().saturating_sub(1);
+                }
+                false
+            }
+            K::Char('[') => {
+                self.paths_scroll = self.paths_scroll.saturating_sub(1);
+                false
+            }
+            K::Char(']') => {
+                let max = self.sandbox_info.exposed_paths.len().saturating_sub(1);
+                if self.paths_scroll < max {
+                    self.paths_scroll += 1;
                 }
                 false
             }
