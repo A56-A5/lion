@@ -82,11 +82,20 @@ pub fn build_bwrap(
     bwrap
 }
 
-/// Helper to mount basic networking files (resolv.conf, SSL certs).
+/// Helper to mount basic networking files (resolv.conf, hosts, SSL certs).
 fn apply_full_network_mounts(bwrap: &mut Command) {
-    if std::path::Path::new("/etc/resolv.conf").exists() {
-        bwrap.args(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]);
+    let net_files = [
+        "/etc/resolv.conf",
+        "/etc/hosts",
+        "/etc/hostname",
+        "/etc/nsswitch.conf",
+    ];
+    for path in net_files {
+        if std::path::Path::new(path).exists() {
+            bwrap.args(["--ro-bind", path, path]);
+        }
     }
+
     if std::path::Path::new("/etc/ssl").exists() {
         bwrap.args(["--ro-bind", "/etc/ssl", "/etc/ssl"]);
     }
@@ -94,3 +103,4 @@ fn apply_full_network_mounts(bwrap: &mut Command) {
         bwrap.args(["--ro-bind", "/etc/pki", "/etc/pki"]);
     }
 }
+

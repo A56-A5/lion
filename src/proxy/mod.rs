@@ -268,10 +268,14 @@ impl ProxyHandle {
             .arg(&script_path)
             .arg(&domain_arg)
             .arg(port.to_string())
-            .stdout(Stdio::inherit())   // proxy logs go to lion's stdout (monitor sees them)
+            // Route proxy logs to stderr so the TUI access-log monitor picks them
+            // up via [LION-PROXY] parsing. If we used stdout here, TUI mode would
+            // funnel them into the command-output panel instead.
+            .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| format!("failed to spawn proxy: {e}"))?;
+
 
         // Wait briefly for the proxy to bind before bwrap starts
         std::thread::sleep(std::time::Duration::from_millis(150));

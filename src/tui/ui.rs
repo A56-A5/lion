@@ -468,18 +468,21 @@ fn render_performance_section(app: &App, f: &mut Frame, area: Rect) {
             x: top.x,
             y: top.y,
             width: 20,
-            height: 1,
+            height: 1.min(top.height),
         },
     );
-    f.render_widget(
-        cpu_spark,
-        Rect {
-            x: top.x + 20,
-            y: top.y,
-            width: top.width - 20,
-            height: 5,
-        },
-    );
+    if top.height >= 1 && top.width > 20 {
+        let spark_height = top.height.min(5);
+        f.render_widget(
+            cpu_spark,
+            Rect {
+                x: top.x + 20,
+                y: top.y,
+                width: top.width - 20,
+                height: spark_height,
+            },
+        );
+    }
 
     // RAM
     let ram_mb = app
@@ -504,18 +507,21 @@ fn render_performance_section(app: &App, f: &mut Frame, area: Rect) {
             x: bottom.x,
             y: bottom.y,
             width: 20,
-            height: 1,
+            height: 1.min(bottom.height),
         },
     );
-    f.render_widget(
-        ram_spark,
-        Rect {
-            x: bottom.x + 20,
-            y: bottom.y,
-            width: bottom.width - 20,
-            height: 5,
-        },
-    );
+    if bottom.height >= 1 && bottom.width > 20 {
+        let spark_height = bottom.height.min(5);
+        f.render_widget(
+            ram_spark,
+            Rect {
+                x: bottom.x + 20,
+                y: bottom.y,
+                width: bottom.width - 20,
+                height: spark_height,
+            },
+        );
+    }
 }
 
 // ── Footer ───────────────────────────────────────────────────────────────────

@@ -101,10 +101,19 @@ fn run_event_loop(
     let mut last_tick = Instant::now();
 
     loop {
-        // Collect all available messages
-        while let Ok(msg) = rx.try_recv() {
-            if app_state.handle_msg(msg) {
-                return Ok(());
+        // Drain incoming messages — cap at 200 per frame so a flood of output
+        // lines (e.g. cargo/npm printing hundreds of lines at once) can't block
+        // the render loop. Remaining messages are picked up next iteration.
+        let mut processed = 0;
+        while processed < 200 {
+            match rx.try_recv() {
+                Ok(msg) => {
+                    if app_state.handle_msg(msg) {
+                        return Ok(());
+                    }
+                    processed += 1;
+                }
+                Err(_) => break,
             }
         }
 
@@ -112,10 +121,18 @@ fn run_event_loop(
 
         let timeout = tick.saturating_sub(last_tick.elapsed());
         if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = crossterm::event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    app_state.on_key(key.code);
+            match crossterm::event::read()? {
+                Event::Key(key) => {
+                    if key.kind == KeyEventKind::Press {
+                        app_state.on_key(key.code);
+                    }
                 }
+                // Terminal resized (or pop-out/maximize) — clear stale chars
+                // and force a full redraw so no artifacts are left on screen.
+                Event::Resize(_, _) => {
+                    terminal.clear()?;
+                }
+                _ => {}
             }
         }
 
@@ -128,6 +145,7 @@ fn run_event_loop(
             return Ok(());
         }
     }
+
 }
 
 // ── Perf collector ────────────────────────────────────────────────────────────
