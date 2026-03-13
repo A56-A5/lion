@@ -14,7 +14,15 @@
 #   "ro"  — read-only   (safe default: code can be read but not modified)
 #   "rw"  — read-write  (use when the program needs to write output files)
 #
-project_access = "ro"
+project_access = "rw"
+
+# ── Source directory protection ───────────────────────────────────────────────
+# When project_access = "rw", lion layers a second read-only bind on top of
+# <project>/src so your source code cannot be modified even though the rest of
+# the project directory is writable (e.g. for build artefacts / output).
+# Set to "rw" to allow the sandboxed process to modify source files too.
+#
+src_access = "ro"
 
 # ── Extra bind mounts ─────────────────────────────────────────────────────────
 # Expose additional host paths into the sandbox.

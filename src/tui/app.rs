@@ -84,8 +84,6 @@ pub struct App {
     /// Wall-clock seconds since the sandbox started.
     pub elapsed_secs: u64,
 
-    /// Whether the user has requested a force kill.
-    pub force_kill_requested: bool,
 
     /// Vertical scroll offset for the exposed paths panel.
     pub paths_scroll: usize,
@@ -111,7 +109,6 @@ impl App {
             ram_history: VecDeque::with_capacity(SPARKLINE_LEN),
             sandbox_info: SandboxInfo::default(),
             elapsed_secs: 0,
-            force_kill_requested: false,
             paths_scroll: 0,
         }
     }
@@ -150,11 +147,6 @@ impl App {
             TuiMsg::Shutdown => {
                 self.should_quit = true;
             }
-            TuiMsg::KillRequested => {
-                self.force_kill_requested = true;
-                self.log.push_back(SandboxEvent::info("<!> FORCE KILL REQUESTED — terminating cage..."));
-                return true; // Exit TUI immediately
-            }
         }
         self.should_quit
     }
@@ -172,7 +164,6 @@ impl App {
                 self.should_quit = true;
                 false
             }
-            K::Char('K') | K::Char('\x0b') => true, // SHIFT+K or Ctrl+K to trigger force kill
             K::Tab => {
                 self.current_tab = self.current_tab.next();
                 false

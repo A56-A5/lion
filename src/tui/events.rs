@@ -15,13 +15,11 @@ pub enum TuiMsg {
     SandboxInfo(SandboxInfo),
     /// Signal the TUI to shutdown.
     Shutdown,
-    /// User requested to kill the sandbox immediately.
-    KillRequested,
 }
 
 impl TuiMsg {
     pub fn is_kill(&self) -> bool {
-        matches!(self, TuiMsg::KillRequested)
+        false
     }
 }
 
@@ -110,6 +108,7 @@ pub struct SandboxInfo {
     pub project_access: String,
     pub exposed_paths: Vec<String>,
     pub active_modules: Vec<String>,
+    pub is_home_exposed: bool,
 }
 
 impl SandboxInfo {

@@ -21,19 +21,28 @@ pub struct LionConfig {
 #[derive(Debug, Deserialize)]
 pub struct SandboxConfig {
     /// How the project directory itself is mounted: "ro" or "rw".
-    /// Defaults to "rw".
-    #[serde(default = "default_rw")]
+    /// Defaults to "ro".
+    #[serde(default = "default_ro")]
     pub project_access: String,
+
+    /// How the project's `src/` subdirectory is mounted when the project is rw.
+    /// Overlays a read-only bind on top of the rw project mount.
+    /// Defaults to "ro" — source code is protected from accidental writes.
+    #[serde(default = "default_ro")]
+    pub src_access: String,
 }
 
 impl Default for SandboxConfig {
     fn default() -> Self {
-        Self { project_access: default_rw() }
+        Self {
+            project_access: default_ro(),
+            src_access: default_ro(),
+        }
     }
 }
 
-fn default_rw() -> String {
-    "rw".to_string()
+fn default_ro() -> String {
+    "ro".to_string()
 }
 
 /// One `[[mount]]` entry.
@@ -65,6 +74,12 @@ impl LionConfig {
     /// Whether the project directory should be read-only.
     pub fn project_is_readonly(&self) -> bool {
         self.sandbox.project_access.trim().to_lowercase() == "ro"
+    }
+
+    /// Whether the project's `src/` subdirectory should be overlaid as read-only.
+    /// Only has effect when the project itself is mounted read-write.
+    pub fn src_is_readonly(&self) -> bool {
+        self.sandbox.src_access.trim().to_lowercase() == "ro"
     }
 }
 

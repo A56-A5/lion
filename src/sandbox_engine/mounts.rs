@@ -26,11 +26,12 @@ pub fn apply_system_mounts(bwrap: &mut Command) {
         }
     }
 
-    // Ensure $HOME exists inside the sandbox as an empty directory in the tmpfs.
-    // Without this, tools like npm, pip, and cargo cannot access ~/.npm, ~/.cache,
-    // ~/.cargo etc. and fail immediately — even though HOME is set in the environment.
-    // We do NOT bind-mount the real home dir (no host files leak in); the directory
-    // is created empty in the synthetic root and any writes are discarded on exit.
+    // Create $HOME as an empty directory inside the sandbox tmpfs.
+    // This is intentional and security-critical: we do NOT bind-mount the real
+    // home directory — that would expose SSH keys, dotfiles, credentials, etc.
+    // Instead, any specific home paths the user actually needs (e.g. ~/.npmrc)
+    // must be listed as [[mount]] entries in lion.toml.  Those entries are
+    // applied later in runner.rs and will create bind-mounts inside this empty dir.
     if let Ok(home) = std::env::var("HOME") {
         bwrap.arg("--dir").arg(&home);
     }

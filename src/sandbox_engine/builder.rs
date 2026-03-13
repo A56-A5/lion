@@ -39,8 +39,16 @@ pub fn build_bwrap(
         "--dir", "/run",
     ]);
 
-    let mount_flag = if project_ro { "--ro-bind" } else { "--bind" };
-    bwrap.arg(mount_flag).arg(project_path).arg(project_path);
+    let is_home = std::env::var("HOME").map(|h| project_path == h).unwrap_or(false);
+
+    if !is_home {
+        let mount_flag = if project_ro { "--ro-bind" } else { "--bind" };
+        bwrap.arg(mount_flag).arg(project_path).arg(project_path);
+    } else {
+        // If it's home, just ensure the directory exists in the sandbox
+        // but don't bind-mount the host's home content into it automatically.
+        bwrap.arg("--dir").arg(project_path);
+    }
 
     use crate::sandbox_engine::network::NetworkMode;
     use tracing::info;

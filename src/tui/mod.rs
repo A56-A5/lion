@@ -28,7 +28,6 @@ const TICK_MS: u64 = 500;
 #[derive(Clone)]
 pub struct TuiHandle {
     tx: Sender<TuiMsg>,
-    kill_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl TuiHandle {
@@ -36,14 +35,12 @@ impl TuiHandle {
     pub fn spawn() -> (Self, thread::JoinHandle<()>) {
         let (tx, rx) = mpsc::channel::<TuiMsg>();
         let tx_clone = tx.clone();
-        let kill_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let kr_clone = kill_requested.clone();
         let join = thread::spawn(move || {
-            if let Err(e) = run_tui_loop(rx, tx_clone, kr_clone) {
+            if let Err(e) = run_tui_loop(rx, tx_clone) {
                 eprintln!("\x1b[90m[LION/TUI] TUI exited with error: {e}\x1b[0m");
             }
         });
-        (TuiHandle { tx, kill_requested }, join)
+        (TuiHandle { tx }, join)
     }
 
     pub fn send(&self, msg: TuiMsg) {
@@ -67,17 +64,13 @@ impl TuiHandle {
         let _ = join.join();
     }
 
-    pub fn kill_requested(&self) -> bool {
-        self.kill_requested.load(std::sync::atomic::Ordering::Relaxed)
-    }
 }
 
 // ── TUI event loop ────────────────────────────────────────────────────────────
 
 fn run_tui_loop(
     rx: mpsc::Receiver<TuiMsg>,
-    tx: mpsc::Sender<TuiMsg>,
-    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _tx: mpsc::Sender<TuiMsg>,
 ) -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -86,7 +79,7 @@ fn run_tui_loop(
     let mut terminal = Terminal::new(backend)?;
 
     let mut app_state = app::App::new();
-    let result = run_event_loop(&mut terminal, &mut app_state, rx, tx, kill_flag);
+    let result = run_event_loop(&mut terminal, &mut app_state, rx, _tx);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -98,8 +91,7 @@ fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app_state: &mut app::App,
     rx: mpsc::Receiver<TuiMsg>,
-    tx: mpsc::Sender<TuiMsg>,
-    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _tx: mpsc::Sender<TuiMsg>,
 ) -> anyhow::Result<()> {
     let tick = Duration::from_millis(TICK_MS);
     let mut last_tick = Instant::now();
@@ -107,9 +99,6 @@ fn run_event_loop(
     loop {
         // Collect all available messages
         while let Ok(msg) = rx.try_recv() {
-            if msg.is_kill() {
-                kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
             if app_state.handle_msg(msg) {
                 return Ok(());
             }
@@ -121,9 +110,7 @@ fn run_event_loop(
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = crossterm::event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if app_state.on_key(key.code) {
-                        let _ = tx.send(TuiMsg::KillRequested);
-                    }
+                    app_state.on_key(key.code);
                 }
             }
         }
