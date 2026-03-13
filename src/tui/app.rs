@@ -172,7 +172,7 @@ impl App {
                 self.should_quit = true;
                 false
             }
-            K::Char('K') => true, // SHIFT+K to trigger force kill
+            K::Char('K') | K::Char('\x0b') => true, // SHIFT+K or Ctrl+K to trigger force kill
             K::Tab => {
                 self.current_tab = self.current_tab.next();
                 false
