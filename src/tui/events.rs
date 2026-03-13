@@ -15,6 +15,14 @@ pub enum TuiMsg {
     SandboxInfo(SandboxInfo),
     /// Signal the TUI to shutdown.
     Shutdown,
+    /// User requested to kill the sandbox immediately.
+    KillRequested,
+}
+
+impl TuiMsg {
+    pub fn is_kill(&self) -> bool {
+        matches!(self, TuiMsg::KillRequested)
+    }
 }
 
 /// The kind of activity being reported.
@@ -81,6 +89,15 @@ pub struct PerfSnapshot {
     pub io_read_kb:  u64,
     pub io_write_kb: u64,
     pub state:       char, // R, S, D, etc.
+    pub processes:   Vec<ProcessInfo>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProcessInfo {
+    pub pid:  u32,
+    pub comm: String,
+    pub cpu:  f64,
+    pub mem:  u64,
 }
 
 /// Static metadata about the running sandbox.

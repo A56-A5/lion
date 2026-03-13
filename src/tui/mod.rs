@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::{
-    event::{self as ct_event, Event, KeyEventKind},
+    event::{Event, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -28,18 +28,22 @@ const TICK_MS: u64 = 500;
 #[derive(Clone)]
 pub struct TuiHandle {
     tx: Sender<TuiMsg>,
+    kill_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl TuiHandle {
     /// Spawn the TUI event loop in a background thread and return a handle.
     pub fn spawn() -> (Self, thread::JoinHandle<()>) {
         let (tx, rx) = mpsc::channel::<TuiMsg>();
+        let tx_clone = tx.clone();
+        let kill_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let kr_clone = kill_requested.clone();
         let join = thread::spawn(move || {
-            if let Err(e) = run_tui_loop(rx) {
+            if let Err(e) = run_tui_loop(rx, tx_clone, kr_clone) {
                 eprintln!("\x1b[90m[LION/TUI] TUI exited with error: {e}\x1b[0m");
             }
         });
-        (TuiHandle { tx }, join)
+        (TuiHandle { tx, kill_requested }, join)
     }
 
     pub fn send(&self, msg: TuiMsg) {
@@ -62,11 +66,19 @@ impl TuiHandle {
         let _ = self.tx.send(TuiMsg::Shutdown);
         let _ = join.join();
     }
+
+    pub fn kill_requested(&self) -> bool {
+        self.kill_requested.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 // ── TUI event loop ────────────────────────────────────────────────────────────
 
-fn run_tui_loop(rx: mpsc::Receiver<TuiMsg>) -> anyhow::Result<()> {
+fn run_tui_loop(
+    rx: mpsc::Receiver<TuiMsg>,
+    tx: mpsc::Sender<TuiMsg>,
+    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -74,7 +86,7 @@ fn run_tui_loop(rx: mpsc::Receiver<TuiMsg>) -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app_state = app::App::new();
-    let result = run_event_loop(&mut terminal, &mut app_state, rx);
+    let result = run_event_loop(&mut terminal, &mut app_state, rx, tx, kill_flag);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -86,18 +98,32 @@ fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app_state: &mut app::App,
     rx: mpsc::Receiver<TuiMsg>,
+    tx: mpsc::Sender<TuiMsg>,
+    kill_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<()> {
     let tick = Duration::from_millis(TICK_MS);
     let mut last_tick = Instant::now();
 
     loop {
+        // Collect all available messages
+        while let Ok(msg) = rx.try_recv() {
+            if msg.is_kill() {
+                kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            if app_state.handle_msg(msg) {
+                return Ok(());
+            }
+        }
+
         terminal.draw(|frame| ui::render(app_state, frame))?;
 
         let timeout = tick.saturating_sub(last_tick.elapsed());
-        if ct_event::poll(timeout)? {
-            if let Event::Key(key) = ct_event::read()? {
+        if crossterm::event::poll(timeout)? {
+            if let Event::Key(key) = crossterm::event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    app_state.on_key(key.code);
+                    if app_state.on_key(key.code) {
+                        let _ = tx.send(TuiMsg::KillRequested);
+                    }
                 }
             }
         }
@@ -105,12 +131,6 @@ fn run_event_loop(
         if last_tick.elapsed() >= tick {
             app_state.tick();
             last_tick = Instant::now();
-        }
-
-        while let Ok(msg) = rx.try_recv() {
-            if app_state.handle_msg(msg) {
-                return Ok(());
-            }
         }
 
         if app_state.should_quit {
@@ -151,6 +171,8 @@ impl Drop for PerfCollectorHandle {
 
 fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     use std::sync::atomic::Ordering;
+    use crate::sandbox_engine::procfs::get_process_tree;
+    
     let user_hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
     let mut prev_ticks: Option<u64> = None;
     let mut prev_time = Instant::now();
@@ -164,11 +186,12 @@ fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomi
             break;
         }
 
-        let pids = get_process_tree(root_pid);
         if !std::path::Path::new(&format!("/proc/{root_pid}")).exists() {
             break;
         }
+        let pids = get_process_tree(root_pid);
 
+        let mut processes = Vec::new();
         let mut total_utime = 0u64;
         let mut total_stime = 0u64;
         let mut total_rss_kb = 0u64;
@@ -179,7 +202,15 @@ fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomi
         let mut states = std::collections::HashSet::new();
 
         for pid in pids {
+            let mut p_rss = 0u64;
+            let mut p_comm = String::new();
+
             if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                if let Some(start) = stat.find('(') {
+                    if let Some(end) = stat.rfind(')') {
+                        p_comm = stat[start + 1..end].to_string();
+                    }
+                }
                 if let Some(last_rparen) = stat.rfind(')') {
                     let fields: Vec<&str> = stat[last_rparen + 1..].split_whitespace().collect();
                     if fields.len() >= 13 {
@@ -192,26 +223,25 @@ fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomi
             if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
                 for line in status.lines() {
                     if let Some(v) = line.strip_prefix("VmRSS:") {
-                        total_rss_kb += v
-                            .split_whitespace()
-                            .next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(0);
+                        let val = v.split_whitespace().next().and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
+                        p_rss = val;
+                        total_rss_kb += val;
                     } else if let Some(v) = line.strip_prefix("VmSize:") {
-                        total_vmsz_kb += v
-                            .split_whitespace()
-                            .next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(0);
+                        let val = v.split_whitespace().next().and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
+                        total_vmsz_kb += val;
                     } else if let Some(v) = line.strip_prefix("Threads:") {
-                        total_threads += v
-                            .split_whitespace()
-                            .next()
-                            .and_then(|n| n.parse().ok())
-                            .unwrap_or(1);
+                        total_threads += v.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(1);
                     }
                 }
             }
+
+            processes.push(crate::tui::events::ProcessInfo {
+                pid,
+                comm: p_comm,
+                cpu: 0.0,
+                mem: p_rss,
+            });
+
             if let Ok(io) = std::fs::read_to_string(format!("/proc/{pid}/io")) {
                 for line in io.lines() {
                     if let Some(v) = line.strip_prefix("read_bytes:") {
@@ -236,15 +266,7 @@ fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomi
         prev_ticks = Some(ticks);
         prev_time = now;
 
-        let state_char = if states.contains(&'R') {
-            'R'
-        } else if states.contains(&'D') {
-            'D'
-        } else if states.contains(&'S') {
-            'S'
-        } else {
-            states.iter().next().cloned().unwrap_or('?')
-        };
+        let state_char = if states.contains(&'R') { 'R' } else if states.contains(&'D') { 'D' } else if states.contains(&'S') { 'S' } else { states.iter().next().cloned().unwrap_or('?') };
 
         tx.perf(PerfSnapshot {
             cpu_pct,
@@ -254,47 +276,9 @@ fn perf_loop(root_pid: u32, tx: TuiHandle, stop: std::sync::Arc<std::sync::atomi
             io_read_kb: total_io_read_kb,
             io_write_kb: total_io_write_kb,
             state: state_char,
+            processes,
         });
     }
-}
-
-fn get_process_tree(root_pid: u32) -> Vec<u32> {
-    let mut pids = vec![root_pid];
-    let mut children_map: std::collections::HashMap<u32, Vec<u32>> =
-        std::collections::HashMap::new();
-    if let Ok(entries) = std::fs::read_dir("/proc") {
-        for entry in entries.flatten() {
-            if let Ok(name) = entry.file_name().into_string() {
-                if let Ok(pid) = name.parse::<u32>() {
-                    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-                        if let Some(last_rparen) = stat.rfind(')') {
-                            let fields: Vec<&str> =
-                                stat[last_rparen + 1..].split_whitespace().collect();
-                            if fields.len() > 1 {
-                                if let Ok(ppid) = fields[1].parse::<u32>() {
-                                    children_map.entry(ppid).or_default().push(pid);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let mut stack = vec![root_pid];
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(root_pid);
-    while let Some(curr) = stack.pop() {
-        if let Some(children) = children_map.get(&curr) {
-            for &child in children {
-                if visited.insert(child) {
-                    pids.push(child);
-                    stack.push(child);
-                }
-            }
-        }
-    }
-    pids
 }
 
 #[inline]
@@ -314,10 +298,7 @@ pub fn parse_monitor_line(line: &str) -> SandboxEvent {
             return SandboxEvent::new(EventKind::ProxyBlock, extract_proxy_target(line), line);
         }
     }
-    if line.contains("Read-only file system")
-        || line.contains("Permission denied")
-        || line.contains("Operation not permitted")
-    {
+    if line.contains("Read-only file system") || line.contains("Permission denied") || line.contains("Operation not permitted") {
         SandboxEvent::new(EventKind::Blocked, extract_path(line), line)
     } else if line.contains("No such file or directory") {
         SandboxEvent::new(EventKind::Missing, extract_path(line), line)
