@@ -18,6 +18,28 @@ fn is_executable(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+fn shell_quote(arg: &str) -> String {
+    if arg.is_empty() {
+        return "''".to_string();
+    }
+    if arg
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || "@%+=:,./-_".contains(ch))
+    {
+        return arg.to_string();
+    }
+    format!("'{}'", arg.replace('\'', "'\\''"))
+}
+
+fn format_command_for_shell(cmd: &Command) -> String {
+    let mut parts = Vec::new();
+    parts.push(shell_quote(&cmd.get_program().to_string_lossy()));
+    for arg in cmd.get_args() {
+        parts.push(shell_quote(&arg.to_string_lossy()));
+    }
+    parts.join(" ")
+}
+
 /// Central entry point — builds and runs the sandboxed process.
 pub fn run_sandboxed(
     cmd: Vec<String>,
@@ -191,6 +213,7 @@ pub fn run_sandboxed(
     bwrap.arg("--chdir").arg(&project_dir).arg("--").args(&cmd);
 
     if dry_run {
+        println!("{}", format_command_for_shell(&bwrap));
         println!("Dry run mode: command not executed");
         return Ok(());
     }

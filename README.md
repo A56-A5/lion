@@ -64,18 +64,19 @@ This is the practical difference: most tools do one or two of these well; L.I.O.
 
 ### Quick comparison (typical out-of-box usage)
 
-| Tool / Category | Main Goal | Process/File Isolation | Per-Run Network Policy | Monitoring | Built-in Live File/Event Observability | Env Scrubbing Workflow | Setup Friction for Daily `npm/pip/script` Runs |
-|---|---|---|---|---|---|---|---|
-| **L.I.O.N** | Safe execution of risky dev commands | **Yes** (namespace + explicit mounts) | **Yes** (`none` / `allow` / `full`) | **Integrated** (events + process/perf in TUI) | **Yes** (integrated TUI/event stream) | **Yes** (`--clearenv`) | **Low** |
-| **Firewall (UFW/iptables/nftables)** | Host/network traffic control | No | Network only | Network-level only (rule hits/logs) | No | No | Medium (rule management) |
-| **Firejail / nsjail** | Sandboxing via profiles/policies | Yes | Yes (policy-based) | Partial (depends on external logging/tools) | Usually external/manual | Possible, profile-dependent | Medium–High (profile tuning) |
-| **Docker / Podman** | Containerized app/runtime packaging | Yes (container boundary) | Yes | Container/runtime metrics/logs (tooling-dependent) | Usually external (`logs`, audit tools) | Possible via container env setup | Medium (image/container workflow) |
-| **VMs (KVM/VirtualBox/VMware)** | Strong full-OS isolation | **Strong** | Yes | Hypervisor + guest tooling (typically external) | Usually external/manual | Guest-managed | High (heavier lifecycle) |
-| **AppArmor / SELinux (LSM)** | Kernel MAC policy enforcement | Policy-based | Indirect/policy-based | Audit/event logs (policy/audit pipeline dependent) | No native app dashboard | N/A | High (policy authoring) |
-| **gVisor / Kata / microVM stacks** | Hardened container isolation | Stronger boundary model | Yes | Runtime/infrastructure observability (external stack) | Usually external | Container-managed | High (infra-oriented) |
+| Tool / Category | Main Goal | Process/File Isolation | Per-Run Network Policy | Monitoring | Built-in Live File/Event Observability | Env Scrubbing Workflow | `sudo` Needed for Typical Run? | Setup Friction for Daily `npm/pip/script` Runs |
+|---|---|---|---|---|---|---|---|---|
+| **L.I.O.N** | Safe execution of risky dev commands | **Yes** (namespace + explicit mounts) | **Yes** (`none` / `allow` / `full`) | **Integrated** (events + process/perf in TUI) | **Yes** (integrated TUI/event stream) | **Yes** (`--clearenv`) | **No** (normal `lion run`) | **Low** |
+| **Firewall (UFW/iptables/nftables)** | Host/network traffic control | No | Network only | Network-level only (rule hits/logs) | No | No | **Yes** (rule changes are privileged) | Medium (rule management) |
+| **Firejail / nsjail** | Sandboxing via profiles/policies | Yes | Yes (policy-based) | Partial (depends on external logging/tools) | Usually external/manual | Possible, profile-dependent | Usually **No** for user runs (depends on setup/profile) | Medium–High (profile tuning) |
+| **Docker / Podman** | Containerized app/runtime packaging | Yes (container boundary) | Yes | Container/runtime metrics/logs (tooling-dependent) | Usually external (`logs`, audit tools) | Possible via container env setup | Varies (Docker often needs `sudo` or docker-group setup; Podman supports rootless) | Medium (image/container workflow) |
+| **VMs (KVM/VirtualBox/VMware)** | Strong full-OS isolation | **Strong** | Yes | Hypervisor + guest tooling (typically external) | Usually external/manual | Guest-managed | Usually **No** after host setup (initial install/config is privileged) | High (heavier lifecycle) |
+| **AppArmor / SELinux (LSM)** | Kernel MAC policy enforcement | Policy-based | Indirect/policy-based | Audit/event logs (policy/audit pipeline dependent) | No native app dashboard | N/A | **Yes** (policy management is privileged) | High (policy authoring) |
+| **gVisor / Kata / microVM stacks** | Hardened container isolation | Stronger boundary model | Yes | Runtime/infrastructure observability (external stack) | Usually external | Container-managed | Usually **Yes** for runtime/integration setup | High (infra-oriented) |
 
 > Notes:
 > - This table compares **common real-world usage patterns**, not maximum possible custom setups.
+> - **L.I.O.N normal runs do not require `sudo`**; admin privileges are only needed for one-time host setup on some systems (for example `lion install` on Ubuntu 24.04+).
 > - L.I.O.N is not a VM replacement; its strength is **low-friction containment + observability** for frequent risky commands.
 
 ### Similar Tool vs Why choose L.I.O.N
