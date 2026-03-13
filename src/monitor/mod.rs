@@ -99,7 +99,15 @@ impl MonitorHandle {
                     if n == 0 { break; }
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
+                        // Always send to the access-log / event parser.
                         tui_stderr.log(crate::tui::parse_monitor_line(trimmed));
+
+                        // Also forward to the output panel — but skip internal
+                        // lion monitoring messages ([LION-PROXY], [LION], etc.)
+                        // so the panel only shows real program output.
+                        if !trimmed.contains("[LION-PROXY]") && !trimmed.starts_with("[LION]") {
+                            tui_stderr.output(trimmed.to_string());
+                        }
                     }
                 } else {
                     break;

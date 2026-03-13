@@ -84,9 +84,16 @@ pub struct App {
     /// Wall-clock seconds since the sandbox started.
     pub elapsed_secs: u64,
 
-
     /// Vertical scroll offset for the exposed paths panel.
     pub paths_scroll: usize,
+
+    // ── Command Output ────────────────────────────────────────────────────────
+    /// Raw stdout lines from the sandboxed command.
+    pub cmd_output: VecDeque<String>,
+    /// If true the output panel auto-scrolls to the latest line.
+    pub cmd_output_follow: bool,
+    /// Vertical scroll offset for the command output panel.
+    pub cmd_scroll: usize,
 }
 
 impl App {
@@ -110,6 +117,9 @@ impl App {
             sandbox_info: SandboxInfo::default(),
             elapsed_secs: 0,
             paths_scroll: 0,
+            cmd_output: VecDeque::with_capacity(MAX_LOG_ENTRIES),
+            cmd_output_follow: true,
+            cmd_scroll: 0,
         }
     }
 
@@ -143,6 +153,18 @@ impl App {
             }
             TuiMsg::SandboxInfo(info) => {
                 self.sandbox_info = info;
+            }
+            TuiMsg::Output(line) => {
+                if self.cmd_output.len() >= MAX_LOG_ENTRIES {
+                    self.cmd_output.pop_front();
+                    if self.cmd_scroll > 0 {
+                        self.cmd_scroll = self.cmd_scroll.saturating_sub(1);
+                    }
+                }
+                self.cmd_output.push_back(line);
+                if self.cmd_output_follow {
+                    self.cmd_scroll = self.cmd_output.len().saturating_sub(1);
+                }
             }
             TuiMsg::Shutdown => {
                 self.should_quit = true;
@@ -222,6 +244,28 @@ impl App {
                 let max = self.sandbox_info.exposed_paths.len().saturating_sub(1);
                 if self.paths_scroll < max {
                     self.paths_scroll += 1;
+                }
+                false
+            }
+            // Output panel scroll: PageUp / PageDown (or Shift+j/k)
+            K::PageDown => {
+                self.cmd_output_follow = false;
+                let max = self.cmd_output.len().saturating_sub(1);
+                if self.cmd_scroll < max {
+                    self.cmd_scroll = (self.cmd_scroll + 10).min(max);
+                }
+                false
+            }
+            K::PageUp => {
+                self.cmd_output_follow = false;
+                self.cmd_scroll = self.cmd_scroll.saturating_sub(10);
+                false
+            }
+            // 'o' toggles follow mode on the output panel
+            K::Char('o') | K::Char('O') => {
+                self.cmd_output_follow = !self.cmd_output_follow;
+                if self.cmd_output_follow {
+                    self.cmd_scroll = self.cmd_output.len().saturating_sub(1);
                 }
                 false
             }

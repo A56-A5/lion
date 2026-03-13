@@ -55,6 +55,10 @@ impl TuiHandle {
         self.send(TuiMsg::Perf(snap));
     }
 
+    pub fn output(&self, line: String) {
+        self.send(TuiMsg::Output(line));
+    }
+
     pub fn send_info(&self, info: SandboxInfo) {
         self.send(TuiMsg::SandboxInfo(info));
     }

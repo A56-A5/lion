@@ -38,17 +38,19 @@ pub fn render(app: &App, f: &mut Frame) {
     let full = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Min(0),     // Main Panels
-            Constraint::Length(12), // Performance & Metrics
-            Constraint::Length(2),  // Footer
+            Constraint::Length(3),   // Header
+            Constraint::Min(0),      // Main Panels
+            Constraint::Length(10),  // Command Output
+            Constraint::Length(12),  // Performance & Metrics
+            Constraint::Length(2),   // Footer
         ])
         .split(f.area());
 
     render_header(app, f, full[0]);
     render_main_panels(app, f, full[1]);
-    render_performance_section(app, f, full[2]);
-    render_footer(app, f, full[3]);
+    render_cmd_output_panel(app, f, full[2]);
+    render_performance_section(app, f, full[3]);
+    render_footer(app, f, full[4]);
 }
 
 // ── Header ───────────────────────────────────────────────────────────────────
@@ -326,6 +328,96 @@ fn render_status_column(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(p_lines), p_inner);
 }
 
+// ── Command Output Panel ───────────────────────────────────────────────────
+
+fn render_cmd_output_panel(app: &App, f: &mut Frame, area: Rect) {
+    let follow_icon  = if app.cmd_output_follow { "● LIVE" } else { "◌ PAUSED" };
+    let follow_color = if app.cmd_output_follow { C_GOOD } else { C_WARN };
+    let line_count   = app.cmd_output.len();
+
+    let block = Block::default()
+        .title(Line::from(vec![
+            Span::styled(" ▶ COMMAND OUTPUT ", Style::default().fg(C_WARN).bold()),
+            Span::styled(
+                format!(" {} ", follow_icon),
+                Style::default().fg(follow_color).bold(),
+            ),
+            Span::styled(
+                format!("({} lines) ", line_count),
+                Style::default().fg(C_DIM),
+            ),
+        ]))
+        .title_bottom(
+            Line::from(vec![Span::styled(
+                " PgUp/PgDn scroll  O toggle-follow ",
+                Style::default().fg(C_DIM),
+            )])
+            .alignment(Alignment::Right),
+        )
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(C_BORDER));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let height = inner.height as usize;
+    if height == 0 { return; }
+
+    let skip = if app.cmd_output_follow {
+        line_count.saturating_sub(height)
+    } else {
+        app.cmd_scroll.min(line_count.saturating_sub(1))
+    };
+
+    if line_count == 0 {
+        f.render_widget(
+            Paragraph::new("no output yet — waiting for command...")
+                .style(Style::default().fg(C_DIM))
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .cmd_output
+        .iter()
+        .skip(skip)
+        .take(height)
+        .map(|line| {
+            // ANSI colour codes from npm/cargo etc. will appear as raw escape
+            // sequences in a pure ratatui context; strip them for cleanliness.
+            let clean = strip_ansi(line);
+            ListItem::new(Line::from(vec![
+                Span::styled(clean, Style::default().fg(C_TEXT)),
+            ]))
+        })
+        .collect();
+
+    f.render_widget(List::new(items), inner);
+}
+
+/// Best-effort strip of ANSI escape sequences from a line.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip '[' and everything up to (and including) the terminating letter
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for ch in chars.by_ref() {
+                    if ch.is_ascii_alphabetic() { break; }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 // ── Performance Section (Graphs) ─────────────────────────────────────────────
 
 fn render_performance_section(app: &App, f: &mut Frame, area: Rect) {
@@ -443,12 +535,14 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     let help = Line::from(vec![
         Span::styled(" Q", Style::default().fg(C_ACCENT).bold()),
         Span::styled(" exit  ", Style::default().fg(C_DIM)),
-        Span::styled(" K", Style::default().fg(C_BAD).bold()),
-        Span::styled(" force-kill  ", Style::default().fg(C_DIM)),
         Span::styled(" F", Style::default().fg(C_GOOD).bold()),
-        Span::styled(" follow  ", Style::default().fg(C_DIM)),
+        Span::styled(" log-follow  ", Style::default().fg(C_DIM)),
+        Span::styled(" O", Style::default().fg(C_WARN).bold()),
+        Span::styled(" out-follow  ", Style::default().fg(C_DIM)),
         Span::styled(" ↑↓", Style::default().fg(C_ACCENT).bold()),
-        Span::styled(" scroll", Style::default().fg(C_DIM)),
+        Span::styled(" log-scroll  ", Style::default().fg(C_DIM)),
+        Span::styled(" PgUp/Dn", Style::default().fg(C_ACCENT).bold()),
+        Span::styled(" out-scroll", Style::default().fg(C_DIM)),
     ]);
     f.render_widget(Paragraph::new(help), left);
 

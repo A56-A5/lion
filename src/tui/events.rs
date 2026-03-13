@@ -13,6 +13,8 @@ pub enum TuiMsg {
     Perf(PerfSnapshot),
     /// Update the sandbox metadata.
     SandboxInfo(SandboxInfo),
+    /// A raw line of stdout from the sandboxed command.
+    Output(String),
     /// Signal the TUI to shutdown.
     Shutdown,
 }

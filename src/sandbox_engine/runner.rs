@@ -197,6 +197,12 @@ pub fn run_sandboxed(
 
     // 6. Execute
     bwrap.stderr(Stdio::piped());
+    if use_tui {
+        // In TUI mode, capture stdout so we can display it in the output panel.
+        // In non-TUI mode, leave stdout connected to the real terminal.
+        bwrap.stdout(Stdio::piped());
+    }
+
     let mut child = bwrap
         .spawn()
         .map_err(|e| LionError::Internal(e.to_string()))?;
@@ -316,7 +322,29 @@ pub fn run_sandboxed(
             crate::monitor::MonitorHandle::start_with_tui(s, watch_paths, tui_handle.clone())
         });
 
-        // Find leader
+        // ── stdout → TUI Output Panel ─────────────────────────────────────────
+        let _stdout_reader = child.stdout.take().map(|stdout| {
+            use std::io::BufRead;
+            let tui_out = tui_handle.clone();
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stdout);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            // Strip trailing newline but preserve the content
+                            let trimmed = line.trim_end_matches('\n').trim_end_matches('\r');
+                            tui_out.output(trimmed.to_string());
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })
+        });
+
+
         let mut leader_pid = None;
         for _ in 0..20 {
             if let Some(p) = get_direct_child(bwrap_pid) {
