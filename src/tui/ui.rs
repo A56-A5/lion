@@ -88,9 +88,30 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
         Span::styled(" ● SANDBOXED ", Style::default().fg(C_GOOD).bold())
     };
 
+    let network_badge = match app.sandbox_info.network_mode.as_str() {
+        "none" => Span::styled(
+            " NET: BLOCKED ",
+            Style::default().bg(C_GOOD).fg(Color::Black).bold(),
+        ),
+        "allow" => Span::styled(
+            " NET: ALLOWLIST ",
+            Style::default().bg(C_WARN).fg(Color::Black).bold(),
+        ),
+        "full" => Span::styled(
+            " NET: FULL ",
+            Style::default().bg(C_BAD).fg(Color::White).bold(),
+        ),
+        _ => Span::styled(
+            " NET: UNKNOWN ",
+            Style::default().bg(C_DIM).fg(Color::White).bold(),
+        ),
+    };
+
     let right_content = Line::from(vec![
         Span::styled("⏱ ", Style::default().fg(C_DIM)),
         Span::styled(app.elapsed_str(), Style::default().fg(C_TEXT).bold()),
+        Span::raw("  "),
+        network_badge,
         Span::raw("  "),
         kill_text,
     ]);
