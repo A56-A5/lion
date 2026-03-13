@@ -1,11 +1,69 @@
 # WHAT IS L.I.O.N
 
+## Docs map
+
+- [README.md](README.md) — onboarding and primary usage
+- [WHAT.md](WHAT.md) — this product/positioning note
+- [Commands.md](Commands.md) — demo flow and talking points
+- [EXPOSURES.md](EXPOSURES.md) — deep exposure/security behavior details
+
 ## Product identity
 
-**L.I.O.N = Lightweight Isolated Orchestration Node.**
+**L.I.O.N = Limit, Isolate, Observe, Namespace.**
 
 L.I.O.N is a **per-execution Linux sandbox runner** for untrusted or risky commands.
 Every `lion run` creates a fresh Bubblewrap namespace cage, runs one command, streams live security telemetry, then destroys the cage.
+
+---
+
+## Idea profile
+
+- **Team**: VALV
+- **Members**: Vishnu Nandan, Alvi A V
+- **Theme**: Cyber Security
+
+### Abstract (refined to current product)
+
+Modern developer commands (`npm install`, `pip install`, setup scripts, unknown binaries) can execute untrusted code with broad host access by default.
+L.I.O.N wraps these commands in a Linux namespace sandbox where filesystem exposure, environment visibility, and network access are explicitly controlled.
+It adds real-time observability so users can see what code reads, writes, and what gets blocked during execution.
+
+### Tech stack used
+
+- Rust for orchestration, CLI, telemetry pipeline, and reliability.
+- Bubblewrap (`bwrap`) for namespace isolation and mount control.
+- Linux primitives: namespaces, bind mounts, `/proc`, inotify.
+- Ratatui + Crossterm for TUI observability.
+- Embedded Python stdlib proxy for HTTP/HTTPS domain filtering.
+
+---
+
+## Accomplishment status vs initial idea
+
+### ✅ Fully accomplished
+
+- **Wrap any command in a disposable Linux sandbox** (`lion run -- <cmd>`).
+- **Control what is exposed** through project mounts, `--ro`, and optional modules.
+- **Real-time observability** for filesystem activity and blocked attempts.
+- **Network modes**: blocked (`none`), unrestricted (`full`), and domain-filtered (`allow`).
+- **Developer-focused usability**: works for installs, tests, dev servers, and many GUI workflows.
+- **No root required for normal runs** (root only for one-time `lion install` on restricted systems).
+
+### 🟡 Partially accomplished / bounded by current scope
+
+- **Domain-level network control** is implemented for HTTP/HTTPS proxy-aware traffic; it is not a universal L3/L4 firewall for all protocols.
+- **Malware-analysis use** is practical for behavior observation, but this is not positioned as a high-assurance VM-grade reverse-engineering lab.
+
+### ❌ Not yet accomplished (already acknowledged in roadmap/limits)
+
+- Seccomp syscall filtering.
+- Hard CPU/RAM enforcement limits.
+- Stronger policy enforcement beyond current namespace + mount + proxy model.
+
+### Evidence-backed summary
+
+From the initial concept, the core promise is already delivered: **limit exposure, isolate execution, and observe behavior live** with low friction for developers.
+The remaining gap is not core concept viability; it is advanced hardening depth (seccomp/resource governance).
 
 ---
 
@@ -94,7 +152,7 @@ L.I.O.N fixes this by making risky execution **isolated, inspectable, and dispos
 
 ---
 
-## What L.I.O.N objectively aces at (fact-based)
+## Where L.I.O.N is strongest today
 
 ### 1) Safe defaults with low user effort
 
@@ -134,7 +192,7 @@ L.I.O.N fixes this by making risky execution **isolated, inspectable, and dispos
 - Supports both terminal-native TUI mode and split monitor/perf terminal mode.
 - Automatic teardown (`--die-with-parent`) limits leftover background process risk.
 
-**Why this matters:** security controls are usable in daily workflows, not only in security specialist flows.
+**Why this matters:** security controls stay usable in everyday development, not just specialist workflows.
 
 ---
 
@@ -160,9 +218,9 @@ L.I.O.N fixes this by making risky execution **isolated, inspectable, and dispos
 
 ---
 
-## Product differentiation (pitch-ready)
+## Product differentiation
 
-### Differentiation we can claim without overreach
+### Differentiation we can claim confidently
 
 - **Command-level disposable isolation** tailored to developer command execution, not long-lived service containers.
 - **Isolation + telemetry in one product path** (filesystem events, blocked attempts, perf/process view).

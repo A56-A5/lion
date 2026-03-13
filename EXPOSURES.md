@@ -4,6 +4,13 @@ By default, L.I.O.N follows a **"Deny All"** philosophy. It builds a synthetic r
 
 This document details exactly what is exposed, hidden, and monitored when running inside L.I.O.N.
 
+## Docs map
+
+- [README.md](README.md) — quick start and high-level overview
+- [WHAT.md](WHAT.md) — product positioning and capability summary
+- [Commands.md](Commands.md) — practical demo steps
+- [EXPOSURES.md](EXPOSURES.md) — this detailed exposure reference
+
 ---
 
 ## 1. Core Isolation (The Wall)
@@ -80,7 +87,12 @@ Network namespace is fully unshared. Zero interfaces. Outbound connections are i
 
 ### `--net=full`
 
-Shares the host network namespace completely. Also mounts `/etc/resolv.conf`, `/etc/ssl`, and `/etc/pki` read-only so HTTPS works. Full internet access.
+Shares the host network namespace completely. To ensure name resolution (e.g. `localhost`) works inside the namespace, L.I.O.N automatically mounts:
+- `/etc/resolv.conf` (ro-bind)
+- `/etc/hosts` (ro-bind)
+- `/etc/hostname` (ro-bind)
+- `/etc/nsswitch.conf` (ro-bind)
+- `/etc/ssl` and `/etc/pki` (ro-bind) for HTTPS certificate verification.
 
 ### Optional modules via `saved.toml` / `--optional`
 
@@ -104,9 +116,16 @@ Common GUI-related modules include `X11`, `Wayland`, `GPU`, `Fonts`, and `D-Bus`
 
 L.I.O.N runs specialized background monitor logic:
 
-**TUI Separation**:
+**TUI Dashboard** (`--tui`):
 
-- Launches a separate terminal (`gnome-terminal` or `kitty`) for events.
+- **Access Log**: Tracks raw filesystem calls and blocked attempts.
+- **Process Tree**: Displays internal PID hierarchy.
+- **Command Output**: Mirrors trapped stdout/stderr of the sandboxed command.
+- **Performance**: Real-time CPU/RAM usage.
+
+**External Monitors** (No-TUI mode):
+
+- Launches separate terminals (`gnome-terminal` or `kitty`) for access logs and performance.
 - Communications happen via a temporary FIFO in `/tmp/lion-monitor-<pid>`.
 - Gracefully falls back to inline monitoring if no separate terminal is available.
 

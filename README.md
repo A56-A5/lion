@@ -1,24 +1,62 @@
 # L.I.O.N 🦁
 
-> **L**inux **I**solation & **O**bservability **N**etwork.
+> **L**imit, **I**solate, **O**bserve, **N**amespace.
 > Hardened, real-time sandboxing for untrusted commands.
 
-L.I.O.N is a security-first sandbox engine for Linux built on top of `bubblewrap` (`bwrap`). It allows you to run any CLI tool, package manager, or script in a "cage" that is physically isolated from your home directory, your credentials, and your system secrets.
+L.I.O.N is a security-first sandbox engine for Linux built on top of `bubblewrap` (`bwrap`). It lets you run CLI tools, package managers, scripts, and many GUI binaries inside a disposable namespace cage with explicit exposure control.
 
 What makes L.I.O.N unique is **Observability**: it doesn't just block access; it shows you exactly what the program is trying to do in real-time.
+
+In one line: **limit what code can access, isolate execution, and observe behavior live**.
+
+## 📚 Docs map
+
+- [README.md](README.md) — quick start + core overview
+- [WHAT.md](WHAT.md) — product positioning, uniqueness, and demo narrative
+- [Commands.md](Commands.md) — step-by-step commands for your demo video
+- [EXPOSURES.md](EXPOSURES.md) — detailed exposure model (what is visible vs hidden)
 
 ---
 
 ## ⚡ Key Features
 
-- **Extreme Isolation**: Every run starts with a blank synthetic root (`/`). Only essential system paths are bind-mounted.
+- **Disposable Per-Run Sandbox**: Every `lion run` starts from a fresh synthetic root (`tmpfs /`) and is destroyed on exit.
 - **Environment Scrubbing**: Automatically wipes sensitive environment variables (AWS keys, GitHub tokens, etc.) before execution.
 - **Live Observability**: Real-time tracking of file access (Read/Write/Delete) and blocked permission attempts.
 - **Performance Monitoring**: Visual CPU and RAM sparklines for the sandboxed process tree.
 - **Command Output Mirroring**: Captures and displays raw command output inside a dedicated TUI panel.
 - **Network Control**: Choose between `None` (fully isolated), `Allow` (domain allow-list), or `Full`.
 - **Source Protection**: Automatically re-mounts your project's `src/` directory as read-only, even if the project root is writable.
-- **Dependency Management**: Built-in support for common tools like `npm`, `cargo`, `pip`, and `git`.
+- **Practical Dev Workflow**: Works out of the box for common tooling (`npm`, `cargo`, `pip`, `git`) with optional config layering.
+
+---
+
+## ✅ What L.I.O.N Accomplishes Today
+
+- Runs untrusted commands with namespace isolation and explicit filesystem exposure.
+- Defaults to blocked networking (`--net=none`) and wiped environment (`--clearenv`).
+- Supports domain-filtered HTTP/HTTPS traffic in `--net=allow` using an embedded proxy.
+- Provides real-time evidence of behavior: file events, blocked attempts, and perf telemetry.
+- Supports project/global config layering plus one-shot CLI overrides.
+
+---
+
+## 🎯 Why Teams Pick It
+
+- **Lower friction than container workflows for single commands**: no image build or container lifecycle needed.
+- **More observable than typical sandbox wrappers**: isolation and live telemetry are integrated in one run path.
+- **More practical than binary on/off networking**: `--net=allow` gives a middle ground for dependency workflows.
+- **Safer write behavior in dev repos**: `src/` read-only overlay protects source while still allowing rw build outputs when configured.
+
+---
+
+## ⚠️ Current Boundaries (No Hype)
+
+- Not a VM/hypervisor security boundary.
+- No seccomp syscall filter yet.
+- No hard CPU/RAM enforcement caps yet (monitoring exists; enforcement is roadmap).
+- `--net=allow` is domain-filtered HTTP/HTTPS proxy control, not a full all-protocol firewall.
+- Linux-only (depends on `bwrap` + Linux namespaces).
 
 ---
 
@@ -141,6 +179,8 @@ lion run --dry-run -- nautilus
 L.I.O.N is built on the **Principle of Least Privilege**. If a program doesn't explicitly need it, it doesn't see it. It shields your `~/.ssh`, `~/.gnupg`, browser cookies, and shell history from every command you run.
 
 For a detailed technical breakdown of what is isolated, see **[EXPOSURES.md](EXPOSURES.md)**.
+
+For a product identity summary, see **[WHAT.md](WHAT.md)**.
 
 ---
 
