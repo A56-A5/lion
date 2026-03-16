@@ -26,6 +26,7 @@ src_access = "ro"
 # [[mount]]
 # path = "/tmp/lion-output"
 # access = "rw"
+
 [[mount]]
-path = "/home/vishnunandan555/Projects/Resonate/Resonate-Website"
+path = "/home/user/Projects/Website"
 access = "rw"
