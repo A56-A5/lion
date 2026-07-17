@@ -27,6 +27,7 @@ src_access = "ro"
 # path = "/tmp/lion-output"
 # access = "rw"
 
-[[mount]]
-path = "/home/user/Projects/Website"
-access = "rw"
+# [[mount]]
+# path = "/home/user/Projects/Website"
+# access = "rw"
+

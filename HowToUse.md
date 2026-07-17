@@ -2,14 +2,61 @@
 
 L.I.O.N is designed to be a low-friction tool for running risky commands. This guide covers everything the tool can do and how to use it effectively.
 
+## Getting Started & Installation
+
+Before running L.I.O.N, ensure you have the required dependencies installed on your system.
+
+### Prerequisites
+
+1. **Rust & Cargo**: Required to compile and build the L.I.O.N binary.
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+2. **bubblewrap (`bwrap`)**: The underlying Linux sandboxing utility.
+   ```bash
+   # Ubuntu / Debian
+   sudo apt install bubblewrap
+
+   # Fedora
+   sudo dnf install bubblewrap
+
+   # Arch Linux
+   sudo pacman -S bubblewrap
+   ```
+
+### Installation Modes
+
+You can run L.I.O.N either directly in development mode (using Cargo) or by installing it system-wide.
+
+#### Method A: Local Cargo Development (Ad-Hoc)
+Use this if you want to test code changes or run commands without installing anything globally:
+```bash
+git clone https://github.com/A56-A5/lion.git
+cd lion
+cargo build
+```
+
+#### Method B: Global Installation
+To install the binary globally into your `~/.cargo/bin` directory (ensure this path is added to your environment's `$PATH`):
+```bash
+cargo install --path .
+```
+
 ## Core Commands
+
 
 ### Running a Sandbox
 
-The primary command is `lion run`. Anything after the `--` separator is executed inside the sandbox.
+The sandbox can be executed either using the globally installed binary (`lion`) or directly via `cargo run` from the project repository. Anything after the `--` separator is executed inside the sandbox.
 
+#### Global Installation
 ```bash
-lion run -- <command> <args>
+lion run [flags] -- <command> <args>
+```
+
+#### Local cargo run
+```bash
+cargo run -- run [flags] -- <command> <args>
 ```
 
 #### Common Flags
@@ -22,11 +69,21 @@ lion run -- <command> <args>
 
 ### System Setup
 
-On some systems (like Ubuntu 24.04+), unprivileged user namespaces are restricted. Use the install command once to set up the necessary profiles:
+On some systems (like Ubuntu 24.04+), unprivileged user namespaces are restricted by default. Run the install command once with root privileges to write and load a targeted AppArmor profile (permitting only `bwrap` to create user namespaces):
 
+**For global installations:**
 ```bash
-sudo lion install
+sudo $(which lion) install
 ```
+
+**For local cargo builds:**
+```bash
+# Build the binary first
+cargo build
+# Run the installation from the build target
+sudo ./target/debug/lion install
+```
+
 
 ---
 
@@ -93,29 +150,74 @@ Configuration at `~/.config/lion/lion.toml` applies to every run across your sys
 
 ## Practical Examples
 
-### Web Development with Full Network
+Here are common developer scenarios showing how to invoke the sandbox. Both the globally installed CLI (`lion`) and local development CLI (`cargo run -- run`) variations are provided.
 
-Run a dev server that needs internet access but keep your project source protected.
+### 1. Web Development (Full Network Access)
+Start a local Node/Python dev server with full internet access while keeping your private home directory credentials (like SSH keys, git configs) hidden.
+* **Global install:**
+  ```bash
+  lion run --net=full --tui -- npm run dev
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --net=full --tui -- npm run dev
+  ```
 
-```bash
-lion run --net=full --tui -- npm run dev
-```
+### 2. Dependency Installation (Domain Whitelist Network)
+Install Python/Node modules while whitelisting only the official package registries to mitigate dependency resolution hijacking.
+* **Global install:**
+  ```bash
+  lion run --net=allow --tui -- pip install -r requirements.txt
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --net=allow --tui -- pip install -r requirements.txt
+  ```
 
-### Testing an Untrusted Script
+### 3. Testing an Untrusted Script (No Network, High Isolation)
+Run custom bash/shell scripts in a network-isolated environment to observe every filesystem access attempt live.
+* **Global install:**
+  ```bash
+  lion run --tui -- bash ./untrusted_script.sh
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --tui -- bash ./untrusted_script.sh
+  ```
 
-Inspect every file a script tries to read without giving it access to your home directory.
+### 4. Running GUI Applications Safely (e.g., Google Chrome)
+Isolate web browser processes from your host cookies, saved logins, and profile history while forwarding graphics sockets to display the browser window.
+* **Global install:**
+  ```bash
+  lion run --gui --net=full --tui -- google-chrome
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --gui --net=full --tui -- google-chrome
+  ```
 
-```bash
-lion run --tui -- bash ./untrusted_script.sh
-```
+### 5. Shielding Against Malicious Build Scripts (`build.rs`)
+In Rust, dependencies can execute arbitrary code on compilation via build scripts (`build.rs`). Run compilation inside L.I.O.N without network access to prevent credentials extraction.
+* **Global install:**
+  ```bash
+  lion run --net=none --tui -- cargo build
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --net=none --tui -- cargo build
+  ```
 
-### Dependency Installation
+### 6. Sandbox Dry-Run (Verification)
+Check the exact commands, namespaces, environment overrides, and volume binds that L.I.O.N is generating for bubblewrap (`bwrap`) without actually spawning a container.
+* **Global install:**
+  ```bash
+  lion run --dry-run -- ls -la
+  ```
+* **Local development:**
+  ```bash
+  cargo run -- run --dry-run -- ls -la
+  ```
 
-Install packages while only allowing access to specific official repositories.
-
-```bash
-lion run --net=allow --tui -- pip install -r requirements.txt
-```
 
 ---
 
